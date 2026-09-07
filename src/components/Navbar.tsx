@@ -75,9 +75,9 @@ export const Navbar: React.FC<NavbarProps> = ({
   };
 
   return (
-    <header className="sticky top-0 z-40 w-full glass-nav transition-all duration-300 shadow-xs">
+    <header className="sticky top-0 z-40 w-full glass-nav transition-all duration-300 shadow-xs pt-3 pb-3 sm:pt-4 sm:pb-3.5">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-18 py-2">
+        <div className="flex items-center justify-between min-h-[4rem]">
           
           {/* Brand & Logo */}
           <div 
