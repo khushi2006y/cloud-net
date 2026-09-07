@@ -1,0 +1,152 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  color: #0f172a;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  overflow-x: hidden;
+  background-color: #f8fafc;
+}
+
+/* Frosted Blur-White Glassmorphism Cards */
+.glass-card {
+  background: rgba(255, 255, 255, 0.78);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.85);
+  box-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.05), 0 1px 3px 0 rgba(15, 23, 42, 0.05);
+}
+
+.glass-card-hover {
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.glass-card-hover:hover {
+  background: rgba(255, 255, 255, 0.92);
+  border-color: #e2e8f0;
+  transform: translateY(-2px);
+  box-shadow: 0 12px 28px -4px rgba(15, 23, 42, 0.08), 0 2px 6px 0 rgba(15, 23, 42, 0.04);
+}
+
+.glass-nav {
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-bottom: 1px solid rgba(226, 232, 240, 0.8);
+}
+
+.glass-input {
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid #cbd5e1;
+  color: #0f172a;
+  transition: all 0.15s ease;
+}
+
+.glass-input:focus {
+  outline: none;
+  border-color: #0284c7;
+  background: #ffffff;
+  box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.12);
+}
+
+/* Subtle Light Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Dynamic Ambient Mood Animations */
+@keyframes rain-streak {
+  0% { transform: translateY(-100%); opacity: 0; }
+  50% { opacity: 0.4; }
+  100% { transform: translateY(100vh); opacity: 0; }
+}
+
+@keyframes pulse-ring-light {
+  0% {
+    transform: scale(0.6);
+    opacity: 0.8;
+  }
+  100% {
+    transform: scale(2.2);
+    opacity: 0;
+  }
+}
+
+.pulse-ring-light {
+  animation: pulse-ring-light 2s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+}
+
+/* Leaflet Map in Crisp Light Frosted Style */
+.leaflet-container {
+  background-color: #f1f5f9 !important;
+  font-family: inherit;
+}
+
+.leaflet-popup-content-wrapper {
+  background: rgba(255, 255, 255, 0.95) !important;
+  color: #0f172a !important;
+  border: 1px solid #e2e8f0 !important;
+  border-radius: 16px !important;
+  box-shadow: 0 10px 30px -4px rgba(15, 23, 42, 0.12) !important;
+  backdrop-filter: blur(12px) !important;
+}
+
+.leaflet-popup-tip {
+  background: #ffffff !important;
+  border: 1px solid #e2e8f0 !important;
+}
+
+.leaflet-popup-close-button {
+  color: #64748b !important;
+  padding: 8px !important;
+}
+
+.leaflet-popup-close-button:hover {
+  color: #0f172a !important;
+}
+
+.custom-weather-pin {
+  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.custom-weather-pin:hover {
+  transform: scale(1.25) translateY(-4px);
+  z-index: 1000 !important;
+}
+
+/* Marquee / Ticker */
+@keyframes ticker {
+  0% { transform: translate3d(0, 0, 0); }
+  100% { transform: translate3d(-50%, 0, 0); }
+}
+
+.animate-ticker {
+  display: inline-flex;
+  white-space: nowrap;
+  animation: ticker 40s linear infinite;
+}
+
+.animate-ticker:hover {
+  animation-play-state: paused;
+}
