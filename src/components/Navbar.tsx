@@ -75,9 +75,9 @@ export const Navbar: React.FC<NavbarProps> = ({
   };
 
   return (
-    <header className="sticky top-0 z-40 w-full glass-nav transition-all duration-300 shadow-xs pt-3 pb-3 sm:pt-4 sm:pb-3.5">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between min-h-[4rem]">
+    <header className="sticky top-3 sm:top-5 z-40 w-full px-3 sm:px-6 lg:px-8 mb-3 transition-all duration-300">
+      <div className="max-w-7xl mx-auto rounded-2xl sm:rounded-3xl bg-white/85 backdrop-blur-xl border border-white/80 shadow-lg shadow-slate-900/5 px-4 sm:px-6 py-2.5">
+        <div className="flex items-center justify-between min-h-[3.75rem]">
           
           {/* Brand & Logo */}
           <div 
@@ -225,7 +225,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         </div>
 
         {/* Mobile Navigation bar */}
-        <div className="flex md:hidden items-center justify-around py-2 border-t border-slate-200/80">
+        <div className="flex md:hidden items-center justify-around pt-2.5 pb-1 border-t border-slate-200/60 mt-1">
           <button
             onClick={() => setActiveTab('dashboard')}
             className={`text-xs py-1.5 px-3 rounded-lg font-semibold ${

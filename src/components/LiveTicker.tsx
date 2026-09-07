@@ -15,8 +15,8 @@ export const LiveTicker: React.FC<LiveTickerProps> = ({ events, onSelectEvent })
   if (severeEvents.length === 0) return null;
 
   return (
-    <div className="w-full bg-white/75 backdrop-blur-md border-b border-slate-200/80 px-4 py-2.5 sm:py-3 overflow-hidden relative shadow-xs">
-      <div className="max-w-7xl mx-auto flex items-center">
+    <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 mb-4 relative z-30">
+      <div className="w-full bg-white/80 backdrop-blur-xl border border-white/80 rounded-2xl px-4 py-2.5 overflow-hidden shadow-xs flex items-center">
         
         {/* Urgent Alert Pill */}
         <div className="flex-shrink-0 flex items-center space-x-1.5 bg-rose-100 text-rose-800 border border-rose-200 px-2.5 py-0.5 rounded-lg text-xs font-bold tracking-wide mr-4 z-10 shadow-xs">

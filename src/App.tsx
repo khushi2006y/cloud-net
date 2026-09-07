@@ -208,19 +208,21 @@ export const App: React.FC = () => {
       {/* Dynamic Animated Atmospheric Weather Canvas */}
       <WeatherAtmosphere mood={activeMood} />
 
-      {/* Top Navbar */}
-      <Navbar
-        activeTab={activeTab}
-        setActiveTab={setActiveTab}
-        onOpenCitizenModal={() => setIsCitizenModalOpen(true)}
-        onOpenAdminLoginModal={() => setIsAdminLoginModalOpen(true)}
-        onOpenHelplinesModal={() => setIsHelplinesModalOpen(true)}
-        isAdminAuthenticated={isAdminAuthenticated}
-        setIsAdminAuthenticated={setIsAdminAuthenticated}
-        activeMood={activeMood}
-        setActiveMood={setActiveMood}
-        totalEventsCount={events.length}
-      />
+      {/* Floating Top Navbar with generous visible space above */}
+      <div className="pt-2 sm:pt-4">
+        <Navbar
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+          onOpenCitizenModal={() => setIsCitizenModalOpen(true)}
+          onOpenAdminLoginModal={() => setIsAdminLoginModalOpen(true)}
+          onOpenHelplinesModal={() => setIsHelplinesModalOpen(true)}
+          isAdminAuthenticated={isAdminAuthenticated}
+          setIsAdminAuthenticated={setIsAdminAuthenticated}
+          activeMood={activeMood}
+          setActiveMood={setActiveMood}
+          totalEventsCount={events.length}
+        />
+      </div>
 
       {/* Breaking Ticker */}
       <LiveTicker 
