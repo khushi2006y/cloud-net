@@ -13,14 +13,21 @@ import {
   Sparkles, 
   Navigation, 
   Compass,
+  Building2,
+  Mail,
+  LocateFixed,
+  ArrowRight,
+  CheckCircle2,
   AlertCircle
 } from 'lucide-react';
 import { WeatherEvent, WeatherMood } from '../types/weather';
 import { 
   searchSmallAreas, 
+  searchByPinCode,
   reverseGeocodeCoords, 
   fetchLiveCoordinatesWeather, 
-  SmallAreaLocation 
+  SmallAreaLocation,
+  PinCodeLocation
 } from '../services/weatherApi';
 import { CATEGORY_CONFIG } from '../data/initialEvents';
 
@@ -39,20 +46,41 @@ export const HyperlocalWeatherBar: React.FC<HyperlocalWeatherBarProps> = ({
   onMoodChange,
   showToast
 }) => {
+  const [activeTab, setActiveTab] = useState<'nearme' | 'pincode' | 'locality'>('nearme');
+
+  // "Near Me" GPS State
   const [isMyAreaEnabled, setIsMyAreaEnabled] = useState<boolean>(() => {
     return localStorage.getItem('cloudnet_my_area_enabled') === 'true';
   });
   const [isLocating, setIsLocating] = useState<boolean>(false);
   const [isPermissionModalOpen, setIsPermissionModalOpen] = useState<boolean>(false);
-  const [searchQuery, setSearchQuery] = useState<string>('');
-  const [searchResults, setSearchResults] = useState<SmallAreaLocation[]>([]);
-  const [isSearching, setIsSearching] = useState<boolean>(false);
-  const [isDropdownOpen, setIsDropdownOpen] = useState<boolean>(false);
   const [myAreaName, setMyAreaName] = useState<string>(() => {
     return localStorage.getItem('cloudnet_my_area_name') || '';
   });
 
+  // PIN Code State
+  const [pincodeInput, setPincodeInput] = useState<string>('');
+  const [isPincodeLoading, setIsPincodeLoading] = useState<boolean>(false);
+  const [pincodeError, setPincodeError] = useState<string | null>(null);
+
+  // Locality Search State
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [searchResults, setSearchResults] = useState<SmallAreaLocation[]>([]);
+  const [isSearching, setIsSearching] = useState<boolean>(false);
+  const [isDropdownOpen, setIsDropdownOpen] = useState<boolean>(false);
+
   const searchBoxRef = useRef<HTMLDivElement>(null);
+
+  // Popular Indian PIN codes quick chips
+  const POPULAR_PINCODES = [
+    { pin: '110001', label: 'New Delhi (CP)' },
+    { pin: '400050', label: 'Bandra (Mumbai)' },
+    { pin: '560034', label: 'Koramangala (BLR)' },
+    { pin: '700001', label: 'Dalhousie (Kolkata)' },
+    { pin: '600001', label: 'George Town (Chennai)' },
+    { pin: '500001', label: 'Hyderabad GPO' },
+    { pin: '302001', label: 'Jaipur Central' }
+  ];
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -89,7 +117,7 @@ export const HyperlocalWeatherBar: React.FC<HyperlocalWeatherBarProps> = ({
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
-  // Request & Fetch device location
+  // Request & Fetch device location for Near Me
   const handleDetectLocation = () => {
     if (!navigator.geolocation) {
       showToast('Geolocation is not supported by your browser.');
@@ -120,7 +148,7 @@ export const HyperlocalWeatherBar: React.FC<HyperlocalWeatherBarProps> = ({
             setMyAreaName(resolved.name);
             localStorage.setItem('cloudnet_my_area_enabled', 'true');
             localStorage.setItem('cloudnet_my_area_name', resolved.name);
-            showToast(`📍 My Area Active: Live weather loaded for ${resolved.name}`);
+            showToast(`📍 Near Me Active: Live weather loaded for ${resolved.name}`);
           } else {
             showToast('Unable to fetch live telemetry for your location.');
           }
@@ -137,26 +165,69 @@ export const HyperlocalWeatherBar: React.FC<HyperlocalWeatherBarProps> = ({
         setIsMyAreaEnabled(false);
         localStorage.setItem('cloudnet_my_area_enabled', 'false');
         if (err.code === err.PERMISSION_DENIED) {
-          showToast('Location permission was denied. You can still search any area manually.');
+          showToast('Location permission was denied. You can search by PIN code or locality.');
         } else {
-          showToast('Unable to retrieve your location. Check your GPS signal.');
+          showToast('Unable to retrieve location. Check your GPS signal.');
         }
       },
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
     );
   };
 
-  // User clicks the My Area toggle button
+  // User clicks the Near Me toggle button
   const handleToggleMyArea = () => {
     if (isMyAreaEnabled) {
-      // Turn OFF immediately
       setIsMyAreaEnabled(false);
       localStorage.setItem('cloudnet_my_area_enabled', 'false');
       onClearHyperlocalEvent();
-      showToast('My Area Weather turned OFF. Location access cleared.');
+      showToast('Near Me Weather turned OFF. Location access cleared.');
     } else {
-      // Prompt permission modal first
       setIsPermissionModalOpen(true);
+    }
+  };
+
+  // PIN Code search handler
+  const handlePincodeSubmit = async (e?: React.FormEvent, directPin?: string) => {
+    if (e) e.preventDefault();
+    const pin = (directPin || pincodeInput).trim().replace(/\D/g, '');
+
+    if (pin.length !== 6) {
+      setPincodeError('Please enter a valid 6-digit Indian PIN code.');
+      return;
+    }
+
+    setPincodeError(null);
+    setIsPincodeLoading(true);
+
+    try {
+      const pinResult = await searchByPinCode(pin);
+      if (!pinResult) {
+        setPincodeError(`Could not find location coordinates for PIN ${pin}.`);
+        setIsPincodeLoading(false);
+        return;
+      }
+
+      const weather = await fetchLiveCoordinatesWeather(
+        pinResult.latitude,
+        pinResult.longitude,
+        `${pinResult.placeName} (PIN ${pin})`,
+        pinResult.state
+      );
+
+      if (weather) {
+        onSelectHyperlocalEvent(weather);
+        if (onMoodChange) {
+          onMoodChange(weather.category);
+        }
+        showToast(`📮 Loaded live weather for PIN ${pin} (${pinResult.placeName})`);
+      } else {
+        setPincodeError(`Could not fetch weather telemetry for PIN ${pin}.`);
+      }
+    } catch (err) {
+      console.error('PIN code weather error:', err);
+      setPincodeError('Error fetching PIN code telemetry.');
+    } finally {
+      setIsPincodeLoading(false);
     }
   };
 
@@ -164,7 +235,7 @@ export const HyperlocalWeatherBar: React.FC<HyperlocalWeatherBarProps> = ({
   const handleSelectArea = async (loc: SmallAreaLocation) => {
     setIsDropdownOpen(false);
     setSearchQuery('');
-    setIsLocating(true);
+    setIsSearching(true);
 
     try {
       const weatherEvent = await fetchLiveCoordinatesWeather(
@@ -186,7 +257,7 @@ export const HyperlocalWeatherBar: React.FC<HyperlocalWeatherBarProps> = ({
     } catch (e) {
       showToast(`Error fetching weather for ${loc.name}`);
     } finally {
-      setIsLocating(false);
+      setIsSearching(false);
     }
   };
 
@@ -196,226 +267,380 @@ export const HyperlocalWeatherBar: React.FC<HyperlocalWeatherBarProps> = ({
     : null;
 
   return (
-    <div className="w-full mb-6 space-y-3">
-      {/* Top Bar: My Area Toggle + Small Area Search Input */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-white/85 backdrop-blur-xl border border-slate-200/90 rounded-2xl p-3 shadow-xs">
+    <section id="hyperlocal-weather-section" className="w-full mb-8 scroll-mt-24">
+      <div className="glass-card rounded-3xl p-5 sm:p-6 shadow-xl border-2 border-sky-300/60 bg-gradient-to-br from-white/95 via-sky-50/40 to-white/90 backdrop-blur-xl relative overflow-hidden space-y-5">
         
-        {/* Left Section: My Area Quick Toggle Switch with Status */}
-        <div className="flex items-center space-x-3">
-          <div className="flex items-center space-x-2">
-            <div className={`w-8 h-8 rounded-xl flex items-center justify-center transition-colors ${
-              isMyAreaEnabled 
-                ? 'bg-emerald-500 text-white shadow-xs shadow-emerald-500/20' 
-                : 'bg-slate-100 text-slate-500'
-            }`}>
-              {isLocating ? (
-                <Loader2 className="w-4 h-4 animate-spin text-emerald-600" />
-              ) : (
-                <Crosshair className="w-4 h-4" />
-              )}
-            </div>
-            
-            <div className="flex flex-col">
-              <span className="text-xs font-bold text-slate-900 flex items-center space-x-1">
-                <span>My Area Weather</span>
-                {isMyAreaEnabled && (
-                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                )}
+        {/* Ambient Top Glow */}
+        <div className="absolute top-0 left-1/4 right-1/4 h-1 bg-gradient-to-r from-sky-400 via-teal-400 to-blue-500 rounded-full blur-xs"></div>
+
+        {/* Section Header */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200/80">
+          <div>
+            <div className="flex items-center space-x-2">
+              <span className="flex items-center justify-center w-8 h-8 rounded-xl bg-gradient-to-tr from-sky-500 to-blue-600 text-white shadow-md shadow-sky-500/20">
+                <Compass className="w-4 h-4 animate-spin-slow" />
               </span>
-              <span className="text-[10px] text-slate-500">
-                {isLocating 
-                  ? 'Detecting GPS...' 
-                  : isMyAreaEnabled 
-                  ? `Active${myAreaName ? `: ${myAreaName}` : ''}` 
-                  : 'Off (Click to turn ON)'}
-              </span>
+              <h2 className="text-base sm:text-lg font-extrabold text-slate-900 tracking-tight flex items-center space-x-2">
+                <span>Hyperlocal & Small-Area Weather Radar</span>
+                <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
+                  Live 1km Grid
+                </span>
+              </h2>
             </div>
+            <p className="text-xs text-slate-600 mt-1">
+              Search any specific neighborhood, village, 6-digit postal PIN code, or pinpoint your exact GPS location.
+            </p>
           </div>
 
-          {/* ON / OFF Switch Button */}
-          <button
-            onClick={handleToggleMyArea}
-            disabled={isLocating}
-            title={isMyAreaEnabled ? 'Click to turn off location weather' : 'Click to enable location weather'}
-            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer border ${
-              isMyAreaEnabled
-                ? 'bg-emerald-50 border-emerald-300 text-emerald-800 hover:bg-rose-50 hover:border-rose-300 hover:text-rose-700'
-                : 'bg-slate-100 border-slate-200 text-slate-700 hover:bg-sky-50 hover:border-sky-300 hover:text-sky-700'
-            }`}
-          >
-            <Power className="w-3.5 h-3.5" />
-            <span>{isMyAreaEnabled ? 'Turn OFF' : 'Turn ON'}</span>
-          </button>
-        </div>
-
-        {/* Right Section: Small Area & Pin Code Search (Option B) */}
-        <div ref={searchBoxRef} className="relative flex-1 max-w-full sm:max-w-md">
-          <div className="relative flex items-center">
-            <Search className="w-4 h-4 text-sky-600 absolute left-3 pointer-events-none" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search small area, neighborhood, suburb or PIN code..."
-              className="w-full bg-slate-50/90 hover:bg-white focus:bg-white border border-slate-200 focus:border-sky-400 focus:ring-2 focus:ring-sky-100 rounded-xl pl-9 pr-8 py-2 text-xs font-medium text-slate-900 placeholder-slate-400 transition-all outline-hidden"
-            />
-            {isSearching ? (
-              <Loader2 className="w-3.5 h-3.5 text-sky-600 animate-spin absolute right-3" />
-            ) : searchQuery ? (
-              <button
-                onClick={() => { setSearchQuery(''); setSearchResults([]); }}
-                className="absolute right-2.5 p-1 text-slate-400 hover:text-slate-600 cursor-pointer"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            ) : null}
-          </div>
-
-          {/* Autocomplete Dropdown */}
-          {isDropdownOpen && searchResults.length > 0 && (
-            <div className="absolute left-0 right-0 top-full mt-1.5 bg-white/95 backdrop-blur-xl border border-slate-200 rounded-xl shadow-xl z-50 overflow-hidden max-h-64 overflow-y-auto">
-              <div className="px-3 py-1.5 bg-slate-50 border-b border-slate-100 text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center justify-between">
-                <span>Select Small Area / Locality:</span>
-                <span className="text-sky-600">{searchResults.length} matches</span>
-              </div>
-              {searchResults.map((loc) => (
-                <button
-                  key={`${loc.id}-${loc.latitude}-${loc.longitude}`}
-                  onClick={() => handleSelectArea(loc)}
-                  className="w-full text-left px-3.5 py-2 hover:bg-sky-50/80 transition-colors flex items-center justify-between group cursor-pointer border-b border-slate-100/60 last:border-0"
-                >
-                  <div className="flex items-center space-x-2.5 min-w-0">
-                    <MapPin className="w-3.5 h-3.5 text-sky-600 flex-shrink-0 group-hover:scale-110 transition-transform" />
-                    <div className="truncate">
-                      <div className="text-xs font-bold text-slate-900 group-hover:text-sky-700">
-                        {loc.name}
-                      </div>
-                      <div className="text-[10px] text-slate-500 truncate">
-                        {[loc.district, loc.state, loc.country].filter(Boolean).join(', ')}
-                        {loc.postcode ? ` • PIN ${loc.postcode}` : ''}
-                      </div>
-                    </div>
-                  </div>
-                  <span className="text-[10px] font-mono text-slate-400 pl-2 flex-shrink-0">
-                    {loc.latitude.toFixed(2)}°, {loc.longitude.toFixed(2)}°
-                  </span>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-
-      </div>
-
-      {/* Active Hyperlocal Microclimate Spotlight Card */}
-      {isHyperlocalActive && activeHyperlocalEvent && config && (
-        <div className="relative overflow-hidden bg-gradient-to-r from-white/95 via-sky-50/80 to-white/95 backdrop-blur-xl border-2 border-sky-300/80 rounded-2xl p-4 shadow-md transition-all animate-fadeIn">
-          
-          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
+          {/* Quick Tab Switcher */}
+          <div className="flex items-center p-1 bg-slate-100/90 rounded-2xl border border-slate-200/80 self-start sm:self-auto">
             
-            {/* Left: Badge, Area Name, Condition */}
-            <div className="flex items-center space-x-3.5">
-              <div className="w-12 h-12 rounded-2xl bg-white border border-sky-200 shadow-sm flex items-center justify-center text-2xl flex-shrink-0">
-                {config.emoji}
-              </div>
+            <button
+              onClick={() => setActiveTab('nearme')}
+              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                activeTab === 'nearme'
+                  ? 'bg-white text-sky-700 shadow-xs border border-slate-200'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <Crosshair className="w-3.5 h-3.5 text-sky-600" />
+              <span>Near Me (GPS)</span>
+            </button>
 
-              <div>
-                <div className="flex items-center space-x-2">
-                  <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-sky-100 text-sky-800 border border-sky-200 flex items-center space-x-1">
-                    <Navigation className="w-2.5 h-2.5 text-sky-600" />
-                    <span>Hyperlocal Area Weather</span>
-                  </span>
-                  <span className="text-xs text-slate-400 font-mono">
-                    [{activeHyperlocalEvent.latitude.toFixed(3)}°N, {activeHyperlocalEvent.longitude.toFixed(3)}°E]
-                  </span>
-                </div>
+            <button
+              onClick={() => setActiveTab('pincode')}
+              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                activeTab === 'pincode'
+                  ? 'bg-white text-sky-700 shadow-xs border border-slate-200'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <Mail className="w-3.5 h-3.5 text-amber-600" />
+              <span>PIN Code</span>
+            </button>
 
-                <h3 className="text-base sm:text-lg font-bold text-slate-900 mt-0.5 flex items-center space-x-2">
-                  <span>{activeHyperlocalEvent.city}</span>
-                  {activeHyperlocalEvent.state && (
-                    <span className="text-xs font-medium text-slate-500">• {activeHyperlocalEvent.state}</span>
+            <button
+              onClick={() => setActiveTab('locality')}
+              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                activeTab === 'locality'
+                  ? 'bg-white text-sky-700 shadow-xs border border-slate-200'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <Building2 className="w-3.5 h-3.5 text-indigo-600" />
+              <span>Locality / Suburb</span>
+            </button>
+
+          </div>
+        </div>
+
+        {/* Tab 1: Near Me (GPS Location) */}
+        {activeTab === 'nearme' && (
+          <div className="bg-white/90 rounded-2xl p-4 border border-slate-200/90 shadow-xs space-y-3 animate-fadeIn">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+              
+              <div className="flex items-center space-x-3">
+                <div className={`w-11 h-11 rounded-2xl flex items-center justify-center text-white shadow-md transition-all ${
+                  isMyAreaEnabled 
+                    ? 'bg-emerald-500 shadow-emerald-500/20' 
+                    : 'bg-slate-400'
+                }`}>
+                  {isLocating ? (
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                  ) : (
+                    <LocateFixed className="w-5 h-5" />
                   )}
-                </h3>
+                </div>
 
-                <p className="text-xs text-slate-600 mt-0.5 line-clamp-1">
-                  {activeHyperlocalEvent.description}
-                </p>
+                <div>
+                  <div className="flex items-center space-x-2">
+                    <span className="text-xs font-bold text-slate-900">
+                      {isMyAreaEnabled ? 'Near Me Weather Active' : 'Near Me Weather (GPS)'}
+                    </span>
+                    <span className={`text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full ${
+                      isMyAreaEnabled 
+                        ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' 
+                        : 'bg-slate-100 text-slate-600'
+                    }`}>
+                      {isMyAreaEnabled ? 'Connected' : 'Turned OFF'}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    {isMyAreaEnabled && myAreaName 
+                      ? `Targeting live coordinates at ${myAreaName}. You can turn this off anytime.` 
+                      : 'Uses device GPS strictly to retrieve high-resolution 1km atmospheric telemetry for your area.'}
+                  </p>
+                </div>
               </div>
+
+              {/* Action Buttons */}
+              <div className="flex items-center space-x-2 w-full sm:w-auto">
+                {isMyAreaEnabled ? (
+                  <button
+                    onClick={handleToggleMyArea}
+                    className="w-full sm:w-auto px-4 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 text-xs font-bold transition-all flex items-center justify-center space-x-1.5 cursor-pointer shadow-xs"
+                  >
+                    <Power className="w-3.5 h-3.5 text-rose-600" />
+                    <span>Turn OFF Location Access</span>
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleToggleMyArea}
+                    disabled={isLocating}
+                    className="w-full sm:w-auto px-5 py-2 rounded-xl bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white text-xs font-bold transition-all flex items-center justify-center space-x-2 cursor-pointer shadow-md shadow-sky-500/20"
+                  >
+                    <Crosshair className="w-3.5 h-3.5" />
+                    <span>{isLocating ? 'Detecting GPS...' : 'Detect My Area (Near Me)'}</span>
+                  </button>
+                )}
+              </div>
+
             </div>
+          </div>
+        )}
 
-            {/* Middle: Live Sensor Telemetry */}
-            {activeHyperlocalEvent.telemetry && (
-              <div className="flex items-center space-x-4 bg-white/80 border border-slate-200/80 rounded-xl px-3.5 py-2 shadow-xs">
-                
-                {/* Temperature */}
-                <div className="text-center">
-                  <div className="text-[10px] uppercase font-semibold text-slate-500">Temp</div>
-                  <div className="text-base font-bold text-slate-900 font-mono">
-                    {Math.round(activeHyperlocalEvent.telemetry.temperatureC ?? 0)}°C
-                  </div>
-                </div>
+        {/* Tab 2: PIN Code Format Search */}
+        {activeTab === 'pincode' && (
+          <div className="bg-white/90 rounded-2xl p-4 border border-slate-200/90 shadow-xs space-y-3.5 animate-fadeIn">
+            
+            <form onSubmit={(e) => handlePincodeSubmit(e)} className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
+              <div className="relative flex-1">
+                <Mail className="w-4 h-4 text-amber-600 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <input
+                  type="text"
+                  maxLength={6}
+                  value={pincodeInput}
+                  onChange={(e) => {
+                    const val = e.target.value.replace(/\D/g, '').slice(0, 6);
+                    setPincodeInput(val);
+                    if (pincodeError) setPincodeError(null);
+                  }}
+                  placeholder="Enter 6-digit Indian PIN Code (e.g. 110001, 400050, 560034)..."
+                  className="w-full bg-slate-50 hover:bg-white focus:bg-white border border-slate-200 focus:border-amber-400 focus:ring-2 focus:ring-amber-100 rounded-xl pl-10 pr-4 py-2.5 text-xs font-bold text-slate-900 placeholder-slate-400 tracking-wider transition-all outline-hidden font-mono"
+                />
+              </div>
 
-                <div className="h-6 w-px bg-slate-200"></div>
+              <button
+                type="submit"
+                disabled={isPincodeLoading || pincodeInput.trim().length !== 6}
+                className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white text-xs font-bold transition-all flex items-center justify-center space-x-1.5 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer shadow-md shadow-amber-600/20 flex-shrink-0"
+              >
+                {isPincodeLoading ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <>
+                    <Search className="w-3.5 h-3.5" />
+                    <span>Fetch PIN Weather</span>
+                  </>
+                )}
+              </button>
+            </form>
 
-                {/* Rain */}
-                <div className="text-center">
-                  <div className="text-[10px] uppercase font-semibold text-slate-500 flex items-center justify-center space-x-0.5">
-                    <Droplets className="w-2.5 h-2.5 text-sky-600" />
-                    <span>Rain</span>
-                  </div>
-                  <div className="text-xs font-bold text-slate-800 font-mono">
-                    {(activeHyperlocalEvent.telemetry.precipitationMm ?? 0).toFixed(1)} mm
-                  </div>
-                </div>
-
-                <div className="h-6 w-px bg-slate-200"></div>
-
-                {/* Wind */}
-                <div className="text-center">
-                  <div className="text-[10px] uppercase font-semibold text-slate-500 flex items-center justify-center space-x-0.5">
-                    <Wind className="w-2.5 h-2.5 text-teal-600" />
-                    <span>Wind</span>
-                  </div>
-                  <div className="text-xs font-bold text-slate-800 font-mono">
-                    {Math.round(activeHyperlocalEvent.telemetry.windSpeedKmh ?? 0)} km/h
-                  </div>
-                </div>
-
-                <div className="h-6 w-px bg-slate-200"></div>
-
-                {/* Humidity */}
-                <div className="text-center">
-                  <div className="text-[10px] uppercase font-semibold text-slate-500 flex items-center justify-center space-x-0.5">
-                    <Gauge className="w-2.5 h-2.5 text-indigo-600" />
-                    <span>Humidity</span>
-                  </div>
-                  <div className="text-xs font-bold text-slate-800 font-mono">
-                    {Math.round(activeHyperlocalEvent.telemetry.humidityPct ?? 0)}%
-                  </div>
-                </div>
-
+            {/* Error Banner */}
+            {pincodeError && (
+              <div className="flex items-center space-x-1.5 text-xs text-rose-600 font-medium bg-rose-50 border border-rose-200 px-3 py-2 rounded-xl">
+                <AlertCircle className="w-4 h-4 text-rose-600 flex-shrink-0" />
+                <span>{pincodeError}</span>
               </div>
             )}
 
-            {/* Right: Exit / Clear Button */}
-            <div className="flex items-center space-x-2">
-              <button
-                onClick={onClearHyperlocalEvent}
-                className="flex items-center space-x-1.5 px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-all cursor-pointer shadow-xs"
-              >
-                <X className="w-3.5 h-3.5 text-slate-500" />
-                <span>Clear / Reset View</span>
-              </button>
+            {/* Popular PIN Code Quick Chips */}
+            <div className="flex flex-wrap items-center gap-1.5 pt-1">
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mr-1">
+                Quick Samples:
+              </span>
+              {POPULAR_PINCODES.map((item) => (
+                <button
+                  key={item.pin}
+                  type="button"
+                  onClick={() => {
+                    setPincodeInput(item.pin);
+                    handlePincodeSubmit(undefined, item.pin);
+                  }}
+                  className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-amber-50 border border-slate-200 hover:border-amber-300 text-slate-700 hover:text-amber-800 text-[11px] font-mono font-bold transition-all cursor-pointer shadow-2xs"
+                >
+                  {item.pin} ({item.label.split(' ')[0]})
+                </button>
+              ))}
             </div>
 
           </div>
+        )}
 
-        </div>
-      )}
+        {/* Tab 3: Locality / Suburb Search */}
+        {activeTab === 'locality' && (
+          <div ref={searchBoxRef} className="bg-white/90 rounded-2xl p-4 border border-slate-200/90 shadow-xs space-y-3 animate-fadeIn relative">
+            
+            <div className="relative">
+              <Building2 className="w-4 h-4 text-indigo-600 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search neighborhood, colony, village, taluk or suburb (e.g. Bandra, Whitefield, Rohini, Connaught Place)..."
+                className="w-full bg-slate-50 hover:bg-white focus:bg-white border border-slate-200 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 rounded-xl pl-10 pr-9 py-2.5 text-xs font-medium text-slate-900 placeholder-slate-400 transition-all outline-hidden"
+              />
+              {isSearching ? (
+                <Loader2 className="w-4 h-4 text-indigo-600 animate-spin absolute right-3.5 top-1/2 -translate-y-1/2" />
+              ) : searchQuery ? (
+                <button
+                  onClick={() => { setSearchQuery(''); setSearchResults([]); }}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600 cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              ) : null}
+            </div>
 
-      {/* Permission Request Modal */}
+            {/* Suggestions Dropdown */}
+            {isDropdownOpen && searchResults.length > 0 && (
+              <div className="bg-white border border-slate-200 rounded-2xl shadow-xl overflow-hidden max-h-60 overflow-y-auto">
+                <div className="px-3 py-2 bg-slate-50 border-b border-slate-100 text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center justify-between">
+                  <span>Matching Indian Localities:</span>
+                  <span className="text-indigo-600">{searchResults.length} places</span>
+                </div>
+                {searchResults.map((loc) => (
+                  <button
+                    key={`${loc.id}-${loc.latitude}-${loc.longitude}`}
+                    onClick={() => handleSelectArea(loc)}
+                    className="w-full text-left px-4 py-2.5 hover:bg-indigo-50/80 transition-colors flex items-center justify-between group cursor-pointer border-b border-slate-100 last:border-0"
+                  >
+                    <div className="flex items-center space-x-3 min-w-0">
+                      <MapPin className="w-4 h-4 text-indigo-600 flex-shrink-0 group-hover:scale-110 transition-transform" />
+                      <div className="truncate">
+                        <div className="text-xs font-bold text-slate-900 group-hover:text-indigo-700">
+                          {loc.name}
+                        </div>
+                        <div className="text-[10px] text-slate-500 truncate">
+                          {[loc.district, loc.state, loc.country].filter(Boolean).join(', ')}
+                          {loc.postcode ? ` • PIN ${loc.postcode}` : ''}
+                        </div>
+                      </div>
+                    </div>
+                    <span className="text-[10px] font-mono text-slate-400 pl-2 flex-shrink-0">
+                      {loc.latitude.toFixed(2)}°, {loc.longitude.toFixed(2)}°
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <div className="flex items-center space-x-2 text-[11px] text-slate-500">
+              <Sparkles className="w-3.5 h-3.5 text-indigo-500" />
+              <span>Instant autocomplete powered by high-resolution geographical indices.</span>
+            </div>
+
+          </div>
+        )}
+
+        {/* Live Weather Spotlight Card (When Any Hyperlocal Location is Active) */}
+        {isHyperlocalActive && activeHyperlocalEvent && config && (
+          <div className="relative overflow-hidden bg-gradient-to-r from-sky-600 via-blue-700 to-indigo-800 text-white rounded-2xl p-5 shadow-xl transition-all animate-fadeIn">
+            
+            {/* Ambient Background Graphic */}
+            <div className="absolute -right-8 -bottom-8 w-40 h-40 bg-white/10 rounded-full blur-2xl pointer-events-none"></div>
+
+            <div className="relative z-10 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-5">
+              
+              {/* Left Column: Place Name & Summary */}
+              <div className="flex items-start sm:items-center space-x-4">
+                <div className="w-14 h-14 rounded-2xl bg-white/15 backdrop-blur-md border border-white/20 shadow-inner flex items-center justify-center text-3xl flex-shrink-0">
+                  {config.emoji}
+                </div>
+
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-[10px] font-extrabold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-white/20 backdrop-blur-md text-white border border-white/30 flex items-center space-x-1">
+                      <Navigation className="w-2.5 h-2.5" />
+                      <span>Live Microclimate Observation</span>
+                    </span>
+                    <span className="text-[11px] text-sky-200 font-mono">
+                      {activeHyperlocalEvent.latitude.toFixed(3)}°N, {activeHyperlocalEvent.longitude.toFixed(3)}°E
+                    </span>
+                  </div>
+
+                  <h3 className="text-lg sm:text-xl font-black text-white mt-1 flex items-center space-x-2">
+                    <span>{activeHyperlocalEvent.city}</span>
+                    {activeHyperlocalEvent.state && (
+                      <span className="text-xs font-medium text-sky-200">• {activeHyperlocalEvent.state}</span>
+                    )}
+                  </h3>
+
+                  <p className="text-xs text-sky-100 mt-1 max-w-xl line-clamp-2">
+                    {activeHyperlocalEvent.description}
+                  </p>
+                </div>
+              </div>
+
+              {/* Middle Column: Live Telemetry Grid */}
+              {activeHyperlocalEvent.telemetry && (
+                <div className="grid grid-cols-4 gap-2.5 bg-black/20 backdrop-blur-md border border-white/15 rounded-2xl p-3 w-full lg:w-auto">
+                  
+                  {/* Temperature */}
+                  <div className="text-center px-2">
+                    <div className="text-[9px] uppercase font-bold text-sky-200">Temp</div>
+                    <div className="text-base sm:text-lg font-black font-mono">
+                      {Math.round(activeHyperlocalEvent.telemetry.temperatureC ?? 0)}°C
+                    </div>
+                  </div>
+
+                  {/* Precipitation */}
+                  <div className="text-center px-2 border-l border-white/10">
+                    <div className="text-[9px] uppercase font-bold text-sky-200 flex items-center justify-center space-x-0.5">
+                      <Droplets className="w-2.5 h-2.5" />
+                      <span>Rain</span>
+                    </div>
+                    <div className="text-xs sm:text-sm font-bold font-mono">
+                      {(activeHyperlocalEvent.telemetry.precipitationMm ?? 0).toFixed(1)} mm
+                    </div>
+                  </div>
+
+                  {/* Wind */}
+                  <div className="text-center px-2 border-l border-white/10">
+                    <div className="text-[9px] uppercase font-bold text-sky-200 flex items-center justify-center space-x-0.5">
+                      <Wind className="w-2.5 h-2.5" />
+                      <span>Wind</span>
+                    </div>
+                    <div className="text-xs sm:text-sm font-bold font-mono">
+                      {Math.round(activeHyperlocalEvent.telemetry.windSpeedKmh ?? 0)} km/h
+                    </div>
+                  </div>
+
+                  {/* Humidity */}
+                  <div className="text-center px-2 border-l border-white/10">
+                    <div className="text-[9px] uppercase font-bold text-sky-200 flex items-center justify-center space-x-0.5">
+                      <Gauge className="w-2.5 h-2.5" />
+                      <span>Humid</span>
+                    </div>
+                    <div className="text-xs sm:text-sm font-bold font-mono">
+                      {Math.round(activeHyperlocalEvent.telemetry.humidityPct ?? 0)}%
+                    </div>
+                  </div>
+
+                </div>
+              )}
+
+              {/* Right Column: Actions */}
+              <div className="flex items-center space-x-2 self-stretch sm:self-auto justify-end">
+                <button
+                  onClick={onClearHyperlocalEvent}
+                  className="px-3.5 py-2.5 rounded-xl bg-white/15 hover:bg-white/25 border border-white/20 text-white text-xs font-bold transition-all flex items-center space-x-1.5 cursor-pointer shadow-sm"
+                >
+                  <X className="w-3.5 h-3.5" />
+                  <span>Reset / Clear</span>
+                </button>
+              </div>
+
+            </div>
+
+          </div>
+        )}
+
+      </div>
+
+      {/* Permission Consent Modal for Near Me */}
       {isPermissionModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-fadeIn">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
           <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-slate-100 relative space-y-4">
             
             {/* Header with Icon */}
@@ -425,7 +650,7 @@ export const HyperlocalWeatherBar: React.FC<HyperlocalWeatherBarProps> = ({
               </div>
               <div>
                 <h3 className="text-base font-bold text-slate-900">
-                  Enable My Area Hyperlocal Weather
+                  Enable Near Me Hyperlocal Weather
                 </h3>
                 <p className="text-xs text-slate-500 font-medium">
                   Real-time microclimate weather for your neighborhood
@@ -471,6 +696,6 @@ export const HyperlocalWeatherBar: React.FC<HyperlocalWeatherBarProps> = ({
         </div>
       )}
 
-    </div>
+    </section>
   );
 };

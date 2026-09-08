@@ -9,7 +9,8 @@ import {
   ShieldCheck, 
   Radio, 
   ShieldAlert,
-  ChevronDown
+  ChevronDown,
+  Compass
 } from 'lucide-react';
 import { WeatherMood } from '../types/weather';
 import { MOOD_THEMES } from '../data/initialEvents';
@@ -177,6 +178,24 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </div>
               )}
             </div>
+
+            {/* Action 0: Hyperlocal / Near Me & PIN Button */}
+            <button
+              onClick={() => {
+                setActiveTab('dashboard');
+                setTimeout(() => {
+                  const el = document.getElementById('hyperlocal-weather-section');
+                  if (el) {
+                    el.scrollIntoView({ behavior: 'smooth' });
+                  }
+                }, 50);
+              }}
+              className="flex items-center space-x-1.5 px-3 py-2 rounded-xl bg-sky-50 hover:bg-sky-100 text-sky-800 font-bold text-xs border border-sky-200 shadow-xs transition-all cursor-pointer"
+              title="Search by Locality, PIN Code or Near Me"
+            >
+              <Compass className="w-4 h-4 text-sky-600 animate-pulse" />
+              <span className="hidden sm:inline">Near Me & PIN</span>
+            </button>
 
             {/* Action 1: SOS Helplines Button */}
             <button

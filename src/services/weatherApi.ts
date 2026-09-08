@@ -264,6 +264,98 @@ export async function searchSmallAreas(query: string): Promise<SmallAreaLocation
   }
 }
 
+export interface PinCodeLocation {
+  pincode: string;
+  placeName: string;
+  state: string;
+  latitude: number;
+  longitude: number;
+}
+
+/**
+ * Resolves an Indian 6-digit PIN code into coordinates and locality name
+ */
+export async function searchByPinCode(pincode: string): Promise<PinCodeLocation | null> {
+  const cleanPin = pincode.replace(/\D/g, '').slice(0, 6);
+  if (cleanPin.length !== 6) return null;
+
+  // 1. Try Zippopotam
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 4000);
+    const res = await fetch(`https://api.zippopotam.us/in/${cleanPin}`, { signal: controller.signal });
+    clearTimeout(timeoutId);
+    if (res.ok) {
+      const data = await res.json();
+      if (data.places && data.places.length > 0) {
+        const place = data.places[0];
+        return {
+          pincode: cleanPin,
+          placeName: place['place name'] || `PIN ${cleanPin}`,
+          state: place.state || 'India',
+          latitude: parseFloat(place.latitude),
+          longitude: parseFloat(place.longitude)
+        };
+      }
+    }
+  } catch (e) {
+    console.warn('Zippopotam PIN code lookup error:', e);
+  }
+
+  // 2. Fallback to Open-Meteo Geocoding
+  try {
+    const res = await fetch(
+      `https://geocoding-api.open-meteo.com/v1/search?name=${cleanPin}&count=3&country_code=IN&language=en&format=json`
+    );
+    if (res.ok) {
+      const data = await res.json();
+      if (data.results && data.results.length > 0) {
+        const place = data.results[0];
+        return {
+          pincode: cleanPin,
+          placeName: place.name || `PIN ${cleanPin}`,
+          state: place.admin1 || place.country || 'India',
+          latitude: place.latitude,
+          longitude: place.longitude
+        };
+      }
+    }
+  } catch (e) {
+    console.warn('Open-Meteo PIN code fallback error:', e);
+  }
+
+  // 3. Fallback to Nominatim
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 4000);
+    const res = await fetch(
+      `https://nominatim.openstreetmap.org/search?postalcode=${cleanPin}&country=India&format=json`,
+      {
+        signal: controller.signal,
+        headers: { 'Accept-Language': 'en' }
+      }
+    );
+    clearTimeout(timeoutId);
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.length > 0) {
+        const place = data[0];
+        return {
+          pincode: cleanPin,
+          placeName: place.display_name.split(',')[0] || `PIN ${cleanPin}`,
+          state: 'India',
+          latitude: parseFloat(place.lat),
+          longitude: parseFloat(place.lon)
+        };
+      }
+    }
+  } catch (e) {
+    console.warn('Nominatim PIN code fallback error:', e);
+  }
+
+  return null;
+}
+
 /**
  * Reverse geocodes coordinates into a readable neighborhood / town / city name
  */
