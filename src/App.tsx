@@ -17,11 +17,17 @@ import { EventDetailModal } from './components/EventDetailModal';
 import { EmergencyHelplineModal } from './components/EmergencyHelplineModal';
 import { WeatherAtmosphere } from './components/WeatherAtmosphere';
 import { WeatherAIChatbot } from './components/WeatherAIChatbot';
+import { HyperlocalWeatherBar } from './components/HyperlocalWeatherBar';
 
 import { WeatherEvent, FilterState, WeatherMood, EventCategory } from './types/weather';
 import { MOOD_THEMES } from './data/initialEvents';
 import { getStoredEvents, getAdminAuthState, addEventWithProcessing, batchAddEvents } from './services/storage';
-import { fetchLiveCityWeather, fetchAllIndianCitiesLiveWeather } from './services/weatherApi';
+import { 
+  fetchLiveCityWeather, 
+  fetchAllIndianCitiesLiveWeather, 
+  reverseGeocodeCoords, 
+  fetchLiveCoordinatesWeather 
+} from './services/weatherApi';
 import { MAJOR_INDIAN_CITIES } from './data/initialEvents';
 
 export const App: React.FC = () => {
@@ -48,6 +54,35 @@ export const App: React.FC = () => {
   const [isHelplinesModalOpen, setIsHelplinesModalOpen] = useState(false);
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState<boolean>(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [activeHyperlocalEvent, setActiveHyperlocalEvent] = useState<WeatherEvent | null>(null);
+
+  const handleSelectHyperlocalEvent = (newEvent: WeatherEvent) => {
+    setActiveHyperlocalEvent(newEvent);
+    setSelectedEvent(newEvent);
+    setActiveMood(newEvent.category);
+    addEventWithProcessing(newEvent);
+    setEvents(getStoredEvents());
+  };
+
+  const handleClearHyperlocalEvent = () => {
+    setActiveHyperlocalEvent(null);
+    setSelectedEvent(null);
+    setActiveMood('default');
+  };
+
+  const handleMapClickCoords = async (lat: number, lng: number) => {
+    try {
+      showToast(`📍 Analyzing microclimate coordinates [${lat.toFixed(3)}°, ${lng.toFixed(3)}°]...`);
+      const resolved = await reverseGeocodeCoords(lat, lng);
+      const weather = await fetchLiveCoordinatesWeather(lat, lng, resolved.name, resolved.state);
+      if (weather) {
+        handleSelectHyperlocalEvent(weather);
+        showToast(`📍 Pinpoint weather loaded for ${resolved.name}`);
+      }
+    } catch (e) {
+      console.error('Map click weather fetch error:', e);
+    }
+  };
 
   // Initialize data and listeners with 100% Real-World Live Data Sync
   useEffect(() => {
@@ -267,6 +302,15 @@ export const App: React.FC = () => {
         {activeTab === 'dashboard' && (
           <div className="space-y-6">
             
+            {/* Hyperlocal Small Area & "My Area" Weather Bar */}
+            <HyperlocalWeatherBar
+              activeHyperlocalEvent={activeHyperlocalEvent}
+              onSelectHyperlocalEvent={handleSelectHyperlocalEvent}
+              onClearHyperlocalEvent={handleClearHyperlocalEvent}
+              onMoodChange={(mood) => setActiveMood(mood)}
+              showToast={showToast}
+            />
+
             {/* KPI Stats Overview */}
             <StatsOverview events={events} />
 
@@ -293,6 +337,7 @@ export const App: React.FC = () => {
                   onOpenDetails={(e) => setInspectedEvent(e)}
                   onOpenReportModal={() => setIsCitizenModalOpen(true)}
                   onMoodChange={(mood) => setActiveMood(mood)}
+                  onMapClickCoords={handleMapClickCoords}
                 />
               </div>
 

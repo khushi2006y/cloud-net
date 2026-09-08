@@ -213,3 +213,157 @@ export function generateSimulatedTweet(): Omit<WeatherEvent, 'id' | 'verificatio
     hashtags: ['#IMD', '#WeatherAlert', `#${cityObj.name}Rains`]
   };
 }
+
+export interface SmallAreaLocation {
+  id: string | number;
+  name: string;
+  latitude: number;
+  longitude: number;
+  state?: string;
+  district?: string;
+  country?: string;
+  postcode?: string;
+}
+
+/**
+ * Searches for any small town, neighborhood, village, or pincode using Open-Meteo Geocoding API
+ */
+export async function searchSmallAreas(query: string): Promise<SmallAreaLocation[]> {
+  if (!query || query.trim().length < 2) return [];
+  const cleanQ = query.trim();
+
+  try {
+    const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(cleanQ)}&count=8&language=en&format=json`;
+    const res = await fetch(url);
+    if (!res.ok) return [];
+    
+    const data = await res.json();
+    if (!data.results || !Array.isArray(data.results)) return [];
+
+    // Sort to prioritize India results if present, or all matching areas
+    const formatted: SmallAreaLocation[] = data.results.map((item: any) => ({
+      id: item.id,
+      name: item.name,
+      latitude: item.latitude,
+      longitude: item.longitude,
+      state: item.admin1 || item.admin2 || '',
+      district: item.admin2 || '',
+      country: item.country || '',
+      postcode: item.postcodes && item.postcodes.length > 0 ? item.postcodes[0] : undefined
+    }));
+
+    // Prioritize Indian results
+    return formatted.sort((a, b) => {
+      const aIn = a.country?.toLowerCase() === 'india' ? 1 : 0;
+      const bIn = b.country?.toLowerCase() === 'india' ? 1 : 0;
+      return bIn - aIn;
+    });
+  } catch (error) {
+    console.warn('Geocoding search failed:', error);
+    return [];
+  }
+}
+
+/**
+ * Reverse geocodes coordinates into a readable neighborhood / town / city name
+ */
+export async function reverseGeocodeCoords(lat: number, lng: number): Promise<{ name: string; state: string }> {
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 4500);
+    const res = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=14&addressdetails=1`,
+      {
+        signal: controller.signal,
+        headers: { 'Accept-Language': 'en' }
+      }
+    );
+    clearTimeout(timeoutId);
+    if (res.ok) {
+      const data = await res.json();
+      const addr = data.address || {};
+      const localName =
+        addr.suburb ||
+        addr.neighbourhood ||
+        addr.residential ||
+        addr.town ||
+        addr.village ||
+        addr.city_district ||
+        addr.city ||
+        data.name ||
+        'Local Area';
+      const stateName = addr.state || addr.state_district || 'India';
+      return { name: localName, state: stateName };
+    }
+  } catch (e) {
+    console.warn('Reverse geocoding fallback:', e);
+  }
+  return {
+    name: `${lat.toFixed(2)}°N, ${lng.toFixed(2)}°E`,
+    state: 'Hyperlocal Area'
+  };
+}
+
+/**
+ * Fetch live microclimate weather for any specific latitude and longitude
+ */
+export async function fetchLiveCoordinatesWeather(
+  lat: number,
+  lng: number,
+  placeName: string,
+  stateName: string = 'India'
+): Promise<WeatherEvent | null> {
+  try {
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current=temperature_2m,relative_humidity_2m,precipitation,rain,weather_code,wind_speed_10m,wind_gusts_10m,surface_pressure&timezone=auto`;
+
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`Open-Meteo HTTP error: ${response.status}`);
+    }
+
+    const data: OpenMeteoResponse = await response.json();
+    const curr = data.current;
+
+    const { category, severity, description, titlePrefix } = mapWmoToCategory(
+      curr.weather_code,
+      curr.temperature_2m,
+      curr.wind_gusts_10m || curr.wind_speed_10m,
+      curr.precipitation
+    );
+
+    const newEvent: WeatherEvent = {
+      id: `evt-hyperlocal-${lat.toFixed(3)}-${lng.toFixed(3)}-${Date.now().toString().slice(-4)}`,
+      source: 'api',
+      sourceAuthor: `Hyperlocal Station [${placeName}]`,
+      isOfficialSource: true,
+      timestamp: new Date().toISOString(),
+      city: placeName,
+      state: stateName,
+      latitude: lat,
+      longitude: lng,
+      category,
+      severity,
+      title: `${titlePrefix} in ${placeName}`,
+      description: `${description} Real-time hyperlocal observation at ${placeName}, ${stateName}.`,
+      rawText: `HYPERLOCAL ${placeName.toUpperCase()} TEMP=${curr.temperature_2m}C HUM=${curr.relative_humidity_2m}% WIND=${curr.wind_speed_10m}KMH RAIN=${curr.precipitation}MM PRESS=${curr.surface_pressure}HPA`,
+      mediaType: 'none',
+      verificationStatus: 'verified',
+      confidenceScore: 99,
+      aiClassificationCategory: category,
+      aiClassificationConfidence: 99,
+      telemetry: {
+        temperatureC: curr.temperature_2m,
+        humidityPct: curr.relative_humidity_2m,
+        windSpeedKmh: curr.wind_speed_10m,
+        precipitationMm: curr.precipitation,
+        pressureHpa: curr.surface_pressure
+      }
+    };
+
+    return newEvent;
+  } catch (error) {
+    console.error(`Failed to fetch hyperlocal weather for ${placeName}:`, error);
+    return null;
+  }
+}
+

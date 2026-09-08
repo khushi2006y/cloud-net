@@ -20,6 +20,7 @@ interface MapViewProps {
   onOpenDetails?: (event: WeatherEvent) => void;
   onOpenReportModal: () => void;
   onMoodChange?: (mood: WeatherMood) => void;
+  onMapClickCoords?: (lat: number, lng: number) => void;
 }
 
 export const MapView: React.FC<MapViewProps> = ({
@@ -27,7 +28,8 @@ export const MapView: React.FC<MapViewProps> = ({
   selectedEvent,
   onSelectEvent,
   onOpenDetails,
-  onMoodChange
+  onMoodChange,
+  onMapClickCoords
 }) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
@@ -46,7 +48,7 @@ export const MapView: React.FC<MapViewProps> = ({
       center: [22.3511148, 78.6677428],
       zoom: 5,
       minZoom: 4,
-      maxZoom: 14,
+      maxZoom: 15,
       zoomControl: false
     });
 
@@ -59,6 +61,12 @@ export const MapView: React.FC<MapViewProps> = ({
 
     L.control.zoom({ position: 'topright' }).addTo(map);
 
+    map.on('click', (e: L.LeafletMouseEvent) => {
+      if (onMapClickCoords) {
+        onMapClickCoords(e.latlng.lat, e.latlng.lng);
+      }
+    });
+
     radarGroupRef.current = L.layerGroup().addTo(map);
     markersGroupRef.current = L.layerGroup().addTo(map);
     mapInstanceRef.current = map;
@@ -67,7 +75,7 @@ export const MapView: React.FC<MapViewProps> = ({
       map.remove();
       mapInstanceRef.current = null;
     };
-  }, []);
+  }, [onMapClickCoords]);
 
   // Update Radar / Thermal Layer Overlays
   useEffect(() => {
@@ -123,27 +131,32 @@ export const MapView: React.FC<MapViewProps> = ({
       const isSevere = event.severity === 'severe' || event.severity === 'extreme';
       const isSelected = selectedEvent?.id === event.id;
 
+      const isHyperlocal = event.id.includes('hyperlocal');
+
       // Custom Clean Frosted HTML Marker Pin
       const markerHtml = `
-        <div class="relative flex items-center justify-center cursor-pointer group" style="width: 40px; height: 40px;">
-          ${pulseEnabled && isSevere ? `
-            <div class="pulse-ring-light absolute rounded-full" style="width: 42px; height: 42px; background-color: ${config.color}; opacity: 0.35;"></div>
+        <div class="relative flex items-center justify-center cursor-pointer group" style="width: 44px; height: 44px;">
+          ${(pulseEnabled && isSevere) || isHyperlocal ? `
+            <div class="pulse-ring-light absolute rounded-full ${isHyperlocal ? 'border-2 border-sky-400' : ''}" style="width: 46px; height: 46px; background-color: ${isHyperlocal ? '#0284c7' : config.color}; opacity: 0.4;"></div>
           ` : ''}
-          <div class="custom-weather-pin relative z-10 flex items-center justify-center rounded-2xl shadow-md transition-transform ${isSelected ? 'scale-125 ring-4 ring-sky-400' : ''}" 
-               style="width: 34px; height: 34px; background: #ffffff; border: 2px solid ${config.color}; box-shadow: 0 4px 14px rgba(0,0,0,0.12);">
-            <span style="font-size: 17px;">
+          <div class="custom-weather-pin relative z-10 flex items-center justify-center rounded-2xl shadow-md transition-transform ${isSelected ? 'scale-125 ring-4 ring-sky-400' : ''} ${isHyperlocal ? 'ring-2 ring-emerald-500' : ''}" 
+               style="width: 36px; height: 36px; background: #ffffff; border: 2px solid ${isHyperlocal ? '#0284c7' : config.color}; box-shadow: 0 4px 14px rgba(0,0,0,0.14);">
+            <span style="font-size: 18px;">
               ${config.emoji}
             </span>
           </div>
+          ${isHyperlocal ? `
+            <span class="absolute -top-1.5 -right-1 bg-sky-600 text-white text-[8px] font-extrabold px-1 rounded-full uppercase tracking-tighter shadow-xs">Area</span>
+          ` : ''}
         </div>
       `;
 
       const customIcon = L.divIcon({
         html: markerHtml,
         className: 'custom-weather-pin-container',
-        iconSize: [40, 40],
-        iconAnchor: [20, 20],
-        popupAnchor: [0, -20]
+        iconSize: [44, 44],
+        iconAnchor: [22, 22],
+        popupAnchor: [0, -22]
       });
 
       const marker = L.marker([event.latitude, event.longitude], { icon: customIcon });
@@ -221,7 +234,8 @@ export const MapView: React.FC<MapViewProps> = ({
   useEffect(() => {
     if (!mapInstanceRef.current || !selectedEvent) return;
     if (!isNaN(selectedEvent.latitude) && !isNaN(selectedEvent.longitude)) {
-      mapInstanceRef.current.flyTo([selectedEvent.latitude, selectedEvent.longitude], 10, {
+      const zoom = selectedEvent.id.includes('hyperlocal') ? 12 : 10;
+      mapInstanceRef.current.flyTo([selectedEvent.latitude, selectedEvent.longitude], zoom, {
         duration: 1.0
       });
     }

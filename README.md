@@ -158,9 +158,14 @@ flowchart TD
 - **Severity Breakdown**: Visual distribution of Low, Moderate, Severe, and Extreme events.
 - **Category Matrix**: Volume breakdown across all 7 meteorological disaster types.
 - **24-Hour Timeline Activity**: Temporal wave chart tracking incident velocity throughout the day.
-- **Verification Funnel**: Distribution of Verified, Unverified, Flagged, and Merged Duplicate incidents.
 
-### 8. Incident Simulation Suite
+### 8. Hyperlocal & Small-Area Weather Engine
+- **"My Area" GPS Microclimate**: Transparent permission-first location detection querying Open-Meteo's high-resolution 1 km–9 km microclimate grid for the user's exact neighborhood.
+- **One-Click Privacy Control**: Immediate toggle switch allowing users to turn off GPS location access and clear cached coordinates at any time.
+- **Small-Area & PIN Code Search**: Autocomplete search resolving small towns, villages, taluks, suburbs, and postal PIN codes across India.
+- **Pinpoint Map Inspection**: Click anywhere on the geospatial map canvas to inspect live microclimate telemetry for that exact coordinate.
+
+### 9. Incident Simulation Suite
 - Test system resilience by dispatching simulated weather anomalies:
   - **Mumbai Monsoon Flash Flood** (Extreme severity, rain rate > 85mm/h)
   - **Delhi Palam Dense Fog Alert** (Zero visibility, flight delays)
