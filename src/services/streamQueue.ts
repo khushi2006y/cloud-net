@@ -1,5 +1,5 @@
 import { WeatherEvent, EventCategory, SeverityLevel } from '../types/weather';
-import { MAJOR_INDIAN_CITIES, INDIAN_STATES } from '../data/initialEvents';
+import { MAJOR_INDIAN_CITIES, INDIAN_STATES, getRandomIndianCity } from '../config/india';
 import { addEventWithProcessing } from './storage';
 import { globalSpatialGrid } from './spatialIndex';
 

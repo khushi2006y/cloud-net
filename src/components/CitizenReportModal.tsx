@@ -14,6 +14,8 @@ import confetti from 'canvas-confetti';
 import { EventCategory, SeverityLevel, WeatherEvent, WeatherMood } from '../types/weather';
 import { CATEGORY_CONFIG, INDIAN_STATES, MAJOR_INDIAN_CITIES } from '../data/initialEvents';
 import { addEventWithProcessing } from '../services/storage';
+import { saveUserReport } from '../services/storage';
+
 
 interface CitizenReportModalProps {
   isOpen: boolean;
@@ -146,6 +148,10 @@ export const CitizenReportModal: React.FC<CitizenReportModalProps> = ({
 
     setSubmissionResult(result);
     onReportSubmitted(result.event);
+
+    // ── Save a copy to user's personal report history (My Reports) ──
+    saveUserReport(result.event);
+
     
     if (onMoodChange) {
       onMoodChange(category);

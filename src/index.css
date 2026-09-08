@@ -15,6 +15,7 @@ body {
   background-color: #f8fafc;
 }
 
+
 /* Frosted Blur-White Glassmorphism Cards */
 .glass-card {
   background: rgba(255, 255, 255, 0.78);
@@ -149,4 +150,81 @@ body {
 
 .animate-ticker:hover {
   animation-play-state: paused;
+}
+
+/* ─── Sidebar Layout ───────────────────────────────────────── */
+:root {
+  --sidebar-expanded: 14rem;  /* 224px = w-56 */
+  --sidebar-collapsed: 4rem;  /* 64px  = w-16 */
+}
+
+/* Sidebar itself transitions width */
+aside {
+  transition: width 250ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Main content transitions left margin */
+.transition-sidebar {
+  transition: margin-left 250ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Sidebar nav item active accent */
+.sidebar-accent-bar {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 1.5rem;
+  border-radius: 0 4px 4px 0;
+}
+
+/* Tooltip for collapsed nav items */
+.sidebar-tooltip {
+  pointer-events: none;
+  position: absolute;
+  left: calc(100% + 10px);
+  top: 50%;
+  transform: translateY(-50%);
+  padding: 4px 10px;
+  background: #0f172a;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 8px;
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity 150ms ease;
+  z-index: 100;
+}
+
+.group:hover .sidebar-tooltip {
+  opacity: 1;
+}
+
+/* Sidebar scrollbar override — thinner */
+aside::-webkit-scrollbar {
+  width: 3px;
+}
+
+aside::-webkit-scrollbar-thumb {
+  background: #e2e8f0;
+  border-radius: 4px;
+}
+
+/* ─── Loading Skeleton Shimmer ─────────────────────────────── */
+@keyframes shimmer {
+  0%   { background-position: 200% center; }
+  100% { background-position: -200% center; }
+}
+
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.4; }
+}
+
+.skeleton-shimmer {
+  background: linear-gradient(90deg, #e2e8f0 25%, #f1f5f9 50%, #e2e8f0 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.6s ease-in-out infinite;
 }

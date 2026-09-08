@@ -1,15 +1,31 @@
+/**
+ * storage.ts — Centralised Event Store
+ *
+ * Provides a high-speed in-memory cache backed by localStorage for the
+ * weather event dataset. All events originate from live sources:
+ *   - Open-Meteo API (real-time sensor telemetry)
+ *   - Citizen crowdsource submissions (form)
+ *   - Simulated / testbed ingestion (SimulationControls)
+ *
+ * NO hardcoded seed data is loaded. On cold-start (empty store),
+ * the application shows a loading skeleton while App.tsx triggers
+ * a live Open-Meteo sync to populate the dataset.
+ */
+
 import { WeatherEvent, VerificationStatus } from '../types/weather';
-import { INITIAL_WEATHER_EVENTS } from '../data/initialEvents';
 import { evaluateEventRules } from './processingEngine';
 import { globalSpatialGrid } from './spatialIndex';
 
-const STORAGE_KEY = 'blure_weather_events_v1';
-const ADMIN_AUTH_KEY = 'blure_admin_auth_v1';
+const STORAGE_KEY = 'cloudnet_weather_events_v2';
+const ADMIN_AUTH_KEY = 'cloudnet_admin_auth_v1';
 
 // In-memory high-speed cache for Big Data scale
 let inMemoryEventsCache: WeatherEvent[] | null = null;
 
+// ─── Core CRUD ────────────────────────────────────────────────────────────────
+
 export function getStoredEvents(): WeatherEvent[] {
+  // Serve from in-memory cache if available
   if (inMemoryEventsCache && inMemoryEventsCache.length > 0) {
     return inMemoryEventsCache;
   }
@@ -17,22 +33,21 @@ export function getStoredEvents(): WeatherEvent[] {
   try {
     const data = localStorage.getItem(STORAGE_KEY);
     if (!data) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(INITIAL_WEATHER_EVENTS));
-      inMemoryEventsCache = INITIAL_WEATHER_EVENTS;
-      globalSpatialGrid.insertBatch(INITIAL_WEATHER_EVENTS);
-      return INITIAL_WEATHER_EVENTS;
+      // Cold start — no seed data. Return empty array.
+      // App.tsx will trigger a live Open-Meteo sync to populate.
+      inMemoryEventsCache = [];
+      return [];
     }
-    const parsed = JSON.parse(data);
+    const parsed: WeatherEvent[] = JSON.parse(data);
     inMemoryEventsCache = parsed;
     globalSpatialGrid.clear();
     globalSpatialGrid.insertBatch(parsed);
     return parsed;
   } catch (e) {
-    console.error('Failed to parse stored events, resetting to defaults:', e);
-    inMemoryEventsCache = INITIAL_WEATHER_EVENTS;
+    console.error('Failed to parse stored events, starting fresh:', e);
+    inMemoryEventsCache = [];
     globalSpatialGrid.clear();
-    globalSpatialGrid.insertBatch(INITIAL_WEATHER_EVENTS);
-    return INITIAL_WEATHER_EVENTS;
+    return [];
   }
 }
 
@@ -42,7 +57,8 @@ export function saveEvents(events: WeatherEvent[]): void {
   globalSpatialGrid.insertBatch(events);
 
   try {
-    // If dataset exceeds 4MB, store newest 1000 items in localStorage and keep full in memory/index
+    // If dataset exceeds localStorage limits, persist newest 1000 items;
+    // full dataset stays in-memory and in the spatial index.
     const serializable = events.length > 1000 ? events.slice(0, 1000) : events;
     localStorage.setItem(STORAGE_KEY, JSON.stringify(serializable));
   } catch (e) {
@@ -50,7 +66,7 @@ export function saveEvents(events: WeatherEvent[]): void {
   }
 
   // Trigger storage event for cross-component reactive sync
-  window.dispatchEvent(new CustomEvent('blure_events_updated', { detail: events }));
+  window.dispatchEvent(new CustomEvent('cloudnet_events_updated', { detail: events }));
 }
 
 export function batchAddEvents(newEvents: WeatherEvent[]): WeatherEvent[] {
@@ -66,7 +82,7 @@ export function addEventWithProcessing(
   }
 ): { event: WeatherEvent; isDuplicate: boolean; isFlagged: boolean; flagReason?: string } {
   const currentEvents = getStoredEvents();
-  
+
   const ruleResult = evaluateEventRules(
     {
       text: `${rawEvent.title} ${rawEvent.description} ${rawEvent.rawText || ''}`,
@@ -81,7 +97,7 @@ export function addEventWithProcessing(
   );
 
   const newId = rawEvent.id || `evt-${rawEvent.source.slice(0, 3)}-${Date.now()}`;
-  
+
   const fullEvent: WeatherEvent = {
     ...rawEvent,
     id: newId,
@@ -99,10 +115,7 @@ export function addEventWithProcessing(
   if (ruleResult.isDuplicate && ruleResult.matchedEventId) {
     updatedList = updatedList.map(e => {
       if (e.id === ruleResult.matchedEventId) {
-        return {
-          ...e,
-          duplicateCount: (e.duplicateCount || 0) + 1
-        };
+        return { ...e, duplicateCount: (e.duplicateCount || 0) + 1 };
       }
       return e;
     });
@@ -129,8 +142,12 @@ export function updateEventStatus(
         ...e,
         verificationStatus: newStatus,
         flagReason: flagReason || e.flagReason,
-        confidenceScore: newStatus === 'verified' ? Math.max(e.confidenceScore, 95) : 
-                         newStatus === 'flagged' ? 10 : e.confidenceScore
+        confidenceScore:
+          newStatus === 'verified'
+            ? Math.max(e.confidenceScore, 95)
+            : newStatus === 'flagged'
+            ? 10
+            : e.confidenceScore
       };
     }
     return e;
@@ -147,12 +164,34 @@ export function deleteEvent(id: string): WeatherEvent[] {
   return updated;
 }
 
-export function resetToSeedData(): WeatherEvent[] {
-  localStorage.removeItem(STORAGE_KEY);
-  inMemoryEventsCache = INITIAL_WEATHER_EVENTS;
-  saveEvents(INITIAL_WEATHER_EVENTS);
-  return INITIAL_WEATHER_EVENTS;
+// ─── Dataset Management ───────────────────────────────────────────────────────
+
+/**
+ * Clears all stored events and resets the in-memory cache.
+ * After calling this, trigger a live Open-Meteo sync to repopulate.
+ * (Replaces the old resetToSeedData() which injected hardcoded events.)
+ */
+export function clearAllEvents(): void {
+  inMemoryEventsCache = [];
+  globalSpatialGrid.clear();
+  try {
+    localStorage.removeItem(STORAGE_KEY);
+  } catch (e) {
+    console.warn('Failed to clear localStorage:', e);
+  }
+  window.dispatchEvent(new CustomEvent('cloudnet_events_updated', { detail: [] }));
 }
+
+/**
+ * @deprecated Use clearAllEvents() instead.
+ * Kept for backward compatibility — clears data instead of seeding hardcoded events.
+ */
+export function resetToSeedData(): WeatherEvent[] {
+  clearAllEvents();
+  return [];
+}
+
+// ─── Admin Auth ───────────────────────────────────────────────────────────────
 
 export function getAdminAuthState(): boolean {
   try {
@@ -169,6 +208,8 @@ export function setAdminAuthState(authed: boolean): void {
     console.error('Failed to set admin auth in localStorage:', e);
   }
 }
+
+// ─── Export Utilities ─────────────────────────────────────────────────────────
 
 export function exportEventsAsCsv(events: WeatherEvent[]): void {
   const headers = [
@@ -207,7 +248,9 @@ export function exportEventsAsCsv(events: WeatherEvent[]): void {
     `"${e.mediaUrl || ''}"`
   ]);
 
-  const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+  const csvContent =
+    'data:text/csv;charset=utf-8,' +
+    [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
   const encodedUri = encodeURI(csvContent);
   const link = document.createElement('a');
   link.setAttribute('href', encodedUri);
@@ -218,11 +261,42 @@ export function exportEventsAsCsv(events: WeatherEvent[]): void {
 }
 
 export function exportEventsAsJson(events: WeatherEvent[]): void {
-  const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(events, null, 2));
+  const dataStr =
+    'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(events, null, 2));
   const link = document.createElement('a');
   link.setAttribute('href', dataStr);
   link.setAttribute('download', `cloudnet_imd_weather_dataset_${Date.now()}.json`);
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
+}
+
+// ─── User Report History (My Reports) ────────────────────────────────────────
+
+const USER_REPORTS_KEY = 'cloudnet_user_reports_v1';
+
+export function getUserReports(): WeatherEvent[] {
+  try {
+    const data = localStorage.getItem(USER_REPORTS_KEY);
+    return data ? (JSON.parse(data) as WeatherEvent[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveUserReport(event: WeatherEvent): void {
+  try {
+    const existing = getUserReports();
+    // Prepend so the most recent report appears first
+    const updated = [event, ...existing.filter(e => e.id !== event.id)];
+    localStorage.setItem(USER_REPORTS_KEY, JSON.stringify(updated));
+  } catch (e) {
+    console.warn('Failed to save user report to history:', e);
+  }
+}
+
+export function clearUserReports(): void {
+  try {
+    localStorage.removeItem(USER_REPORTS_KEY);
+  } catch {}
 }

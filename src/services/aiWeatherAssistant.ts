@@ -1,5 +1,6 @@
 import { WeatherEvent, EventCategory } from '../types/weather';
-import { CATEGORY_CONFIG, MAJOR_INDIAN_CITIES } from '../data/initialEvents';
+import { CATEGORY_CONFIG } from '../data/initialEvents';
+import { MAJOR_INDIAN_CITIES } from '../config/india';
 
 export interface ChatMessage {
   id: string;

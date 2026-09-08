@@ -1,5 +1,5 @@
 import { WeatherEvent, EventCategory, SeverityLevel } from '../types/weather';
-import { MAJOR_INDIAN_CITIES } from '../data/initialEvents';
+import { MAJOR_INDIAN_CITIES, getRandomIndianCity } from '../config/india';
 
 interface OpenMeteoResponse {
   latitude: number;

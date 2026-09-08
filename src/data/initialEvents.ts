@@ -1,4 +1,28 @@
+/**
+ * initialEvents.ts — UI Configuration Constants
+ *
+ * Contains CATEGORY_CONFIG (display metadata for the 7 IMD weather categories)
+ * and MOOD_THEMES (ambient atmosphere themes for the dashboard).
+ *
+ * ⚠️  All hardcoded seed weather events have been removed.
+ *     The platform exclusively uses live data from:
+ *      - Open-Meteo API  (https://open-meteo.com)
+ *      - Open-Meteo Geocoding API
+ *      - Nominatim / OpenStreetMap
+ *      - Citizen crowdsource reports (form submissions)
+ *
+ * Geographic lookup constants (cities, districts, states) have been
+ * moved to src/config/india.ts.
+ */
+
 import { WeatherEvent, CategoryMeta, EventCategory, WeatherMood, MoodTheme } from '../types/weather';
+
+// Re-export geographic config for backwards compatibility with any remaining
+// consumers that have not yet been updated to import from config/india directly.
+export { MAJOR_INDIAN_CITIES, MAJOR_INDIAN_DISTRICTS, INDIAN_STATES } from '../config/india';
+export type { CityNode, DistrictNode } from '../config/india';
+
+// ─── Category Display Configuration ─────────────────────────────────────────
 
 export const CATEGORY_CONFIG: Record<EventCategory, CategoryMeta> = {
   rainfall: {
@@ -10,7 +34,7 @@ export const CATEGORY_CONFIG: Record<EventCategory, CategoryMeta> = {
     badgeBg: 'bg-sky-100 text-sky-800 border-sky-200',
     badgeBorder: 'border-sky-300',
     iconName: 'CloudRain',
-    description: 'Continuous downpour > 65mm in 24h'
+    description: 'Continuous downpour >65mm in 24h'
   },
   thunderstorm: {
     id: 'thunderstorm',
@@ -43,7 +67,7 @@ export const CATEGORY_CONFIG: Record<EventCategory, CategoryMeta> = {
     badgeBg: 'bg-orange-100 text-orange-900 border-orange-200',
     badgeBorder: 'border-orange-300',
     iconName: 'Sun',
-    description: 'Temperatures > 4.5°C above normal average'
+    description: 'Temperatures >4.5°C above normal average'
   },
   fog: {
     id: 'fog',
@@ -54,7 +78,7 @@ export const CATEGORY_CONFIG: Record<EventCategory, CategoryMeta> = {
     badgeBg: 'bg-slate-200 text-slate-800 border-slate-300',
     badgeBorder: 'border-slate-300',
     iconName: 'CloudFog',
-    description: 'Visibility < 200m causing transit slowdowns'
+    description: 'Visibility <200m causing transit slowdowns'
   },
   'dust storm': {
     id: 'dust storm',
@@ -79,6 +103,8 @@ export const CATEGORY_CONFIG: Record<EventCategory, CategoryMeta> = {
     description: 'High velocity squalls exceeding 55 km/h'
   }
 };
+
+// ─── Dashboard Mood / Atmosphere Themes ──────────────────────────────────────
 
 export const MOOD_THEMES: Record<WeatherMood, MoodTheme> = {
   default: {
@@ -171,397 +197,18 @@ export const MOOD_THEMES: Record<WeatherMood, MoodTheme> = {
   }
 };
 
-export const INITIAL_WEATHER_EVENTS: WeatherEvent[] = [
-  {
-    id: 'evt-tw-001',
-    source: 'twitter',
-    sourceAuthor: 'India Meteorological Dept',
-    sourceHandle: '@Indiametdept',
-    isOfficialSource: true,
-    timestamp: '2026-08-22T05:15:00Z',
-    city: 'Mumbai',
-    state: 'Maharashtra',
-    latitude: 19.0760,
-    longitude: 72.8777,
-    category: 'rainfall',
-    severity: 'severe',
-    title: 'Extremely Heavy Rainfall Red Alert for Mumbai MMR',
-    description: 'IMD Mumbai issues Red Alert for Mumbai, Thane & Raigad districts. Intense spells of precipitation (>115.6mm) likely over the next 6 hours with tidal surge.',
-    rawText: 'RED ALERT: #IMD Mumbai issues urgent heavy rainfall warning for Mumbai, Thane and Raigad. Rainfall intensity likely to increase during high tide (4.2m). Stay indoors. #MumbaiRains #WeatherAlert',
-    hashtags: ['#IMD', '#MumbaiRains', '#WeatherAlert', '#Monsoon2026'],
-    mediaUrl: 'https://images.unsplash.com/photo-1534274988757-a28bf1a57c17?w=600&auto=format&fit=crop&q=80',
-    mediaType: 'image',
-    verificationStatus: 'verified',
-    confidenceScore: 98,
-    aiClassificationCategory: 'rainfall',
-    aiClassificationConfidence: 99,
-    telemetry: {
-      precipitationMm: 128.4,
-      windSpeedKmh: 48,
-      temperatureC: 26.5,
-      humidityPct: 96
-    }
-  },
-  {
-    id: 'evt-tw-002',
-    source: 'twitter',
-    sourceAuthor: 'Chennai Weather Watch',
-    sourceHandle: '@ChennaiRainsWatch',
-    isOfficialSource: false,
-    timestamp: '2026-08-22T04:45:00Z',
-    city: 'Chennai',
-    state: 'Tamil Nadu',
-    latitude: 13.0827,
-    longitude: 80.2707,
-    category: 'thunderstorm',
-    severity: 'severe',
-    title: 'Severe Thunderstorm & Lightning over Chennai Coast',
-    description: 'Vigorous cloud bands triggering continuous lightning strikes and heavy localized showers across Adyar, Guindy and Marina beachfront.',
-    rawText: 'Brutal thunderstorm pounding South Chennai right now. Non-stop thunderbolts and sudden wind gusts over 60 km/h. Tracked on #IMD Doppler radar. #ChennaiRains #Thunderstorm',
-    hashtags: ['#IMD', '#ChennaiRains', '#Thunderstorm'],
-    mediaUrl: 'https://images.unsplash.com/photo-1605727216801-e27ce1d0cc28?w=600&auto=format&fit=crop&q=80',
-    mediaType: 'image',
-    verificationStatus: 'verified',
-    confidenceScore: 92,
-    aiClassificationCategory: 'thunderstorm',
-    aiClassificationConfidence: 95,
-    telemetry: {
-      windSpeedKmh: 62,
-      precipitationMm: 45.2,
-      temperatureC: 28.1,
-      humidityPct: 91
-    }
-  },
-  {
-    id: 'evt-api-003',
-    source: 'api',
-    sourceAuthor: 'Open-Meteo Station [DEL-IGI]',
-    isOfficialSource: true,
-    timestamp: '2026-08-22T03:30:00Z',
-    city: 'New Delhi',
-    state: 'Delhi',
-    latitude: 28.6139,
-    longitude: 77.2090,
-    category: 'fog',
-    severity: 'moderate',
-    title: 'Dense Morning Fog & Low Visibility in Delhi NCR',
-    description: 'Surface sensors at Palam and Safdarjung reporting surface horizontal visibility dropped to 120m with near 100% relative humidity.',
-    rawText: 'METAR VIDP 220330Z 00000KT 0120 FG VV001 14/14 Q1017 NOSIG',
-    mediaType: 'none',
-    verificationStatus: 'verified',
-    confidenceScore: 99,
-    aiClassificationCategory: 'fog',
-    aiClassificationConfidence: 98,
-    telemetry: {
-      temperatureC: 14.2,
-      humidityPct: 99,
-      windSpeedKmh: 4.5,
-      pressureHpa: 1017
-    }
-  },
-  {
-    id: 'evt-cit-004',
-    source: 'citizen',
-    sourceAuthor: 'Ananya Sharma',
-    timestamp: '2026-08-22T05:00:00Z',
-    city: 'Bengaluru',
-    state: 'Karnataka',
-    latitude: 12.9716,
-    longitude: 77.5946,
-    category: 'flooding',
-    severity: 'extreme',
-    title: 'Waterlogging on Outer Ring Road, Bellandur',
-    description: 'ORR near Bellandur EcoSpace completely flooded with 3 feet water depth. Commuters stranded, BMTC buses diverted.',
-    rawText: 'Outer ring road Bellandur completely submerged in knee-deep water after sudden 1 hour downpour. Traffic stalled for 4 kms. #BangaloreRains',
-    hashtags: ['#BangaloreRains', '#BellandurFlood'],
-    mediaUrl: 'https://images.unsplash.com/photo-1547683905-f686c993aae5?w=600&auto=format&fit=crop&q=80',
-    mediaType: 'image',
-    verificationStatus: 'verified',
-    confidenceScore: 88,
-    aiClassificationCategory: 'flooding',
-    aiClassificationConfidence: 94
-  },
-  {
-    id: 'evt-cit-005',
-    source: 'citizen',
-    sourceAuthor: 'Kiran Patel',
-    timestamp: '2026-08-22T05:05:00Z',
-    city: 'Bengaluru',
-    state: 'Karnataka',
-    latitude: 12.9740,
-    longitude: 77.5980,
-    category: 'flooding',
-    severity: 'severe',
-    title: 'Water stagnation near Bellandur flyover',
-    description: 'Heavy water stagnation near tech park exit. Same zone as ORR incident.',
-    rawText: 'Bellandur junction waterlogged, cars struggling to pass.',
-    verificationStatus: 'duplicate',
-    confidenceScore: 85,
-    mergedWithId: 'evt-cit-004',
-    duplicateCount: 1,
-    aiClassificationCategory: 'flooding',
-    aiClassificationConfidence: 90
-  },
-  {
-    id: 'evt-tw-006',
-    source: 'twitter',
-    sourceAuthor: 'Rajasthan Weather Alert',
-    sourceHandle: '@RajWeatherLive',
-    isOfficialSource: false,
-    timestamp: '2026-08-22T02:00:00Z',
-    city: 'Bikaner',
-    state: 'Rajasthan',
-    latitude: 28.0229,
-    longitude: 73.3119,
-    category: 'heatwave',
-    severity: 'extreme',
-    title: 'Heatwave Alert: Mercury hits 47.8°C in Bikaner',
-    description: 'Severe heatwave conditions persisting over Western Rajasthan. Loo winds blowing at 35 km/h. Public advised to avoid direct sun exposure.',
-    rawText: 'SCORCHING HEAT: Bikaner clocks 47.8°C today, highest in NW India. Severe heatwave advisory confirmed by #IMD. Stay hydrated. #RajasthanHeatwave #LooAlert',
-    hashtags: ['#IMD', '#RajasthanHeatwave', '#LooAlert', '#Heatwave'],
-    mediaUrl: 'https://images.unsplash.com/photo-1504386106331-3e4e71712b38?w=600&auto=format&fit=crop&q=80',
-    mediaType: 'image',
-    verificationStatus: 'verified',
-    confidenceScore: 94,
-    aiClassificationCategory: 'heatwave',
-    aiClassificationConfidence: 97,
-    telemetry: {
-      temperatureC: 47.8,
-      humidityPct: 18,
-      windSpeedKmh: 34
-    }
-  },
-  {
-    id: 'evt-tw-007',
-    source: 'twitter',
-    sourceAuthor: 'Desert Storm Tracker',
-    sourceHandle: '@TharStorms',
-    isOfficialSource: false,
-    timestamp: '2026-08-22T04:10:00Z',
-    city: 'Jaisalmer',
-    state: 'Rajasthan',
-    latitude: 26.9157,
-    longitude: 70.9083,
-    category: 'dust storm',
-    severity: 'severe',
-    title: 'Andhi (Dust Storm) sweeps through Jaisalmer',
-    description: 'High velocity dust squalls reducing visibility to under 50m. Sand dunes shifting across NH-11.',
-    rawText: 'Huge dust storm wall rolled into Jaisalmer 20 mins ago! Darkness at noon. #IMD warns winds up to 70kmph. #DustStorm #Andhi #Jaisalmer',
-    hashtags: ['#IMD', '#DustStorm', '#Andhi', '#Jaisalmer'],
-    mediaUrl: 'https://images.unsplash.com/photo-1545134969-8debd725b002?w=600&auto=format&fit=crop&q=80',
-    mediaType: 'image',
-    verificationStatus: 'verified',
-    confidenceScore: 91,
-    aiClassificationCategory: 'dust storm',
-    aiClassificationConfidence: 96
-  },
-  {
-    id: 'evt-api-008',
-    source: 'api',
-    sourceAuthor: 'Open-Meteo Station [GHY-Borjhar]',
-    isOfficialSource: true,
-    timestamp: '2026-08-22T04:55:00Z',
-    city: 'Guwahati',
-    state: 'Assam',
-    latitude: 26.1445,
-    longitude: 91.7362,
-    category: 'strong wind',
-    severity: 'severe',
-    title: 'High Velocity Gale Winds across Brahmaputra Valley',
-    description: 'Anemometer spikes recorded peak wind gusts of 78 km/h during pre-monsoon convective cluster passage.',
-    rawText: 'LIVE TELEMETRY: Gust 78 km/h, Sustained 56 km/h, Barometric Drop 4.2 hPa in 15min. #AssamWeather',
-    mediaType: 'none',
-    verificationStatus: 'verified',
-    confidenceScore: 97,
-    aiClassificationCategory: 'strong wind',
-    aiClassificationConfidence: 98,
-    telemetry: {
-      windSpeedKmh: 78,
-      temperatureC: 24.0,
-      humidityPct: 88,
-      pressureHpa: 1004
-    }
-  },
-  {
-    id: 'evt-cit-009',
-    source: 'citizen',
-    sourceAuthor: 'Rajesh Nambiar',
-    timestamp: '2026-08-22T05:10:00Z',
-    city: 'Kochi',
-    state: 'Kerala',
-    latitude: 9.9312,
-    longitude: 76.2673,
-    category: 'rainfall',
-    severity: 'severe',
-    title: 'Heavy Downpour over Kochi Marine Drive',
-    description: 'Non-stop rain for over 3 hours. Water starting to rise near High Court walkway and low-lying coastal pockets.',
-    rawText: 'Heavy rain pounding Kochi continuously. Can barely see 10 meters ahead on the bypass road. #KeralaRains #IMD',
-    hashtags: ['#KeralaRains', '#IMD'],
-    mediaUrl: 'https://images.unsplash.com/photo-1519692933481-e162a57d6721?w=600&auto=format&fit=crop&q=80',
-    mediaType: 'image',
-    verificationStatus: 'unverified',
-    confidenceScore: 72,
-    aiClassificationCategory: 'rainfall',
-    aiClassificationConfidence: 89
-  },
-  {
-    id: 'evt-fake-010',
-    source: 'twitter',
-    sourceAuthor: 'ClickbaitBot99',
-    sourceHandle: '@RandomViralPromo',
-    isOfficialSource: false,
-    timestamp: '2026-08-22T05:20:00Z',
-    city: 'Kolkata',
-    state: 'West Bengal',
-    latitude: 22.5726,
-    longitude: 88.3639,
-    category: 'thunderstorm',
-    severity: 'low',
-    title: 'Suspicious / Spam Report Flagged by AI',
-    description: 'Post contains promotional links and lacks standard meteorological terms or verifiable sensor correlation.',
-    rawText: 'Earn money online quickly! Also it might rain in Kolkata today maybe. Click here bit.ly/spam-test #IMD',
-    hashtags: ['#IMD', '#Promo'],
-    verificationStatus: 'flagged',
-    confidenceScore: 18,
-    flagReason: 'Rule Trigger: Promotional links and spam pattern detected.',
-    aiClassificationCategory: 'thunderstorm',
-    aiClassificationConfidence: 25
-  },
-  {
-    id: 'evt-tw-012',
-    source: 'twitter',
-    sourceAuthor: 'Kolkata Cloud Watcher',
-    sourceHandle: '@KolkataRains',
-    isOfficialSource: false,
-    timestamp: '2026-08-22T04:30:00Z',
-    city: 'Kolkata',
-    state: 'West Bengal',
-    latitude: 22.5726,
-    longitude: 88.3639,
-    category: 'thunderstorm',
-    severity: 'moderate',
-    title: 'Kalbaishakhi (Nor\'wester) approaching Kolkata',
-    description: 'Dark anvil clouds building up over Bankura and moving east towards Kolkata with thunder rolls.',
-    rawText: 'Kalbaishakhi storm cloud approaching Kolkata from NW direction. Expect gusty winds and lightning soon. #KolkataRains #IMD #Norwester',
-    hashtags: ['#KolkataRains', '#IMD', '#Norwester'],
-    mediaUrl: 'https://images.unsplash.com/photo-1527482797697-8795b05a13fe?w=600&auto=format&fit=crop&q=80',
-    mediaType: 'image',
-    verificationStatus: 'verified',
-    confidenceScore: 89,
-    aiClassificationCategory: 'thunderstorm',
-    aiClassificationConfidence: 93
-  }
-];
+// ─── Type guard helper ────────────────────────────────────────────────────────
 
-export const INDIAN_STATES = [
-  'All States',
-  'Maharashtra',
-  'Tamil Nadu',
-  'Delhi',
-  'Karnataka',
-  'Rajasthan',
-  'West Bengal',
-  'Kerala',
-  'Assam',
-  'Gujarat',
-  'Uttar Pradesh',
-  'Telangana',
-  'Andhra Pradesh',
-  'Odisha',
-  'Punjab'
-];
-
-export const MAJOR_INDIAN_CITIES = [
-  { name: 'Mumbai', state: 'Maharashtra', lat: 19.0760, lng: 72.8777 },
-  { name: 'Delhi', state: 'Delhi', lat: 28.6139, lng: 77.2090 },
-  { name: 'Bengaluru', state: 'Karnataka', lat: 12.9716, lng: 77.5946 },
-  { name: 'Chennai', state: 'Tamil Nadu', lat: 13.0827, lng: 80.2707 },
-  { name: 'Kolkata', state: 'West Bengal', lat: 22.5726, lng: 88.3639 },
-  { name: 'Hyderabad', state: 'Telangana', lat: 17.3850, lng: 78.4867 },
-  { name: 'Ahmedabad', state: 'Gujarat', lat: 23.0225, lng: 72.5714 },
-  { name: 'Jaipur', state: 'Rajasthan', lat: 26.9124, lng: 75.7873 },
-  { name: 'Kochi', state: 'Kerala', lat: 9.9312, lng: 76.2673 },
-  { name: 'Guwahati', state: 'Assam', lat: 26.1445, lng: 91.7362 },
-  { name: 'Bikaner', state: 'Rajasthan', lat: 28.0229, lng: 73.3119 },
-  { name: 'Jaisalmer', state: 'Rajasthan', lat: 26.9157, lng: 70.9083 }
-];
-
-export interface DistrictNode {
-  name: string;
-  state: string;
-  lat: number;
-  lng: number;
-  isMetro: boolean;
+/** Narrows an unknown string into a valid EventCategory */
+export function isValidCategory(cat: string): cat is EventCategory {
+  return Object.keys(CATEGORY_CONFIG).includes(cat);
 }
 
-export const MAJOR_INDIAN_DISTRICTS: DistrictNode[] = [
-  // Major Metros
-  { name: 'Mumbai', state: 'Maharashtra', lat: 19.0760, lng: 72.8777, isMetro: true },
-  { name: 'Delhi', state: 'Delhi', lat: 28.6139, lng: 77.2090, isMetro: true },
-  { name: 'Bengaluru', state: 'Karnataka', lat: 12.9716, lng: 77.5946, isMetro: true },
-  { name: 'Chennai', state: 'Tamil Nadu', lat: 13.0827, lng: 80.2707, isMetro: true },
-  { name: 'Kolkata', state: 'West Bengal', lat: 22.5726, lng: 88.3639, isMetro: true },
-  { name: 'Hyderabad', state: 'Telangana', lat: 17.3850, lng: 78.4867, isMetro: true },
-  { name: 'Ahmedabad', state: 'Gujarat', lat: 23.0225, lng: 72.5714, isMetro: true },
-  { name: 'Pune', state: 'Maharashtra', lat: 18.5204, lng: 73.8567, isMetro: true },
-  { name: 'Jaipur', state: 'Rajasthan', lat: 26.9124, lng: 75.7873, isMetro: true },
-  { name: 'Kochi', state: 'Kerala', lat: 9.9312, lng: 76.2673, isMetro: true },
-  { name: 'Guwahati', state: 'Assam', lat: 26.1445, lng: 91.7362, isMetro: true },
-  { name: 'Surat', state: 'Gujarat', lat: 21.1702, lng: 72.8311, isMetro: true },
-  { name: 'Lucknow', state: 'Uttar Pradesh', lat: 26.8467, lng: 80.9462, isMetro: true },
-  { name: 'Bhopal', state: 'Madhya Pradesh', lat: 23.2599, lng: 77.4126, isMetro: true },
-  { name: 'Chandigarh', state: 'Punjab', lat: 30.7333, lng: 76.7794, isMetro: true },
-  { name: 'Visakhapatnam', state: 'Andhra Pradesh', lat: 17.6868, lng: 83.2185, isMetro: true },
-  { name: 'Thiruvananthapuram', state: 'Kerala', lat: 8.5241, lng: 76.9366, isMetro: true },
-  { name: 'Bhubaneswar', state: 'Odisha', lat: 20.2961, lng: 85.8245, isMetro: true },
-  { name: 'Patna', state: 'Bihar', lat: 25.5941, lng: 85.1376, isMetro: true },
-  { name: 'Nagpur', state: 'Maharashtra', lat: 21.1458, lng: 79.0882, isMetro: true },
+// ─── Placeholder export for type safety ──────────────────────────────────────
 
-  // Districts (non-metro)
-  { name: 'Bikaner', state: 'Rajasthan', lat: 28.0229, lng: 73.3119, isMetro: false },
-  { name: 'Jaisalmer', state: 'Rajasthan', lat: 26.9157, lng: 70.9083, isMetro: false },
-  { name: 'Jodhpur', state: 'Rajasthan', lat: 26.2389, lng: 73.0243, isMetro: false },
-  { name: 'Udaipur', state: 'Rajasthan', lat: 24.5854, lng: 73.7125, isMetro: false },
-  { name: 'Ajmer', state: 'Rajasthan', lat: 26.4521, lng: 74.6402, isMetro: false },
-  { name: 'Nashik', state: 'Maharashtra', lat: 19.9975, lng: 73.7898, isMetro: false },
-  { name: 'Aurangabad', state: 'Maharashtra', lat: 19.8762, lng: 75.3433, isMetro: false },
-  { name: 'Kolhapur', state: 'Maharashtra', lat: 16.7050, lng: 74.2433, isMetro: false },
-  { name: 'Madurai', state: 'Tamil Nadu', lat: 9.9252, lng: 78.1198, isMetro: false },
-  { name: 'Coimbatore', state: 'Tamil Nadu', lat: 11.0168, lng: 76.9558, isMetro: false },
-  { name: 'Salem', state: 'Tamil Nadu', lat: 11.6643, lng: 78.1460, isMetro: false },
-  { name: 'Tiruchirappalli', state: 'Tamil Nadu', lat: 10.7905, lng: 78.7047, isMetro: false },
-  { name: 'Varanasi', state: 'Uttar Pradesh', lat: 25.3176, lng: 82.9739, isMetro: false },
-  { name: 'Kanpur', state: 'Uttar Pradesh', lat: 26.4499, lng: 80.3319, isMetro: false },
-  { name: 'Agra', state: 'Uttar Pradesh', lat: 27.1767, lng: 78.0081, isMetro: false },
-  { name: 'Allahabad', state: 'Uttar Pradesh', lat: 25.4358, lng: 81.8463, isMetro: false },
-  { name: 'Meerut', state: 'Uttar Pradesh', lat: 28.9845, lng: 77.7064, isMetro: false },
-  { name: 'Amritsar', state: 'Punjab', lat: 31.6340, lng: 74.8723, isMetro: false },
-  { name: 'Ludhiana', state: 'Punjab', lat: 30.9010, lng: 75.8573, isMetro: false },
-  { name: 'Jalandhar', state: 'Punjab', lat: 31.3260, lng: 75.5762, isMetro: false },
-  { name: 'Indore', state: 'Madhya Pradesh', lat: 22.7196, lng: 75.8577, isMetro: false },
-  { name: 'Gwalior', state: 'Madhya Pradesh', lat: 26.2183, lng: 78.1828, isMetro: false },
-  { name: 'Jabalpur', state: 'Madhya Pradesh', lat: 23.1815, lng: 79.9864, isMetro: false },
-  { name: 'Dibrugarh', state: 'Assam', lat: 27.4728, lng: 94.9120, isMetro: false },
-  { name: 'Silchar', state: 'Assam', lat: 24.8333, lng: 92.7789, isMetro: false },
-  { name: 'Mangalore', state: 'Karnataka', lat: 12.9141, lng: 74.8560, isMetro: false },
-  { name: 'Mysuru', state: 'Karnataka', lat: 12.2958, lng: 76.6394, isMetro: false },
-  { name: 'Hubli', state: 'Karnataka', lat: 15.3647, lng: 75.1240, isMetro: false },
-  { name: 'Calicut', state: 'Kerala', lat: 11.2588, lng: 75.7804, isMetro: false },
-  { name: 'Thrissur', state: 'Kerala', lat: 10.5276, lng: 76.2144, isMetro: false },
-  { name: 'Raipur', state: 'Chhattisgarh', lat: 21.2514, lng: 81.6296, isMetro: false },
-  { name: 'Dehradun', state: 'Uttarakhand', lat: 30.3165, lng: 78.0322, isMetro: false },
-  { name: 'Haridwar', state: 'Uttarakhand', lat: 29.9457, lng: 78.1642, isMetro: false },
-  { name: 'Ranchi', state: 'Jharkhand', lat: 23.3441, lng: 85.3096, isMetro: false },
-  { name: 'Jamshedpur', state: 'Jharkhand', lat: 22.8046, lng: 86.2029, isMetro: false },
-  { name: 'Imphal', state: 'Manipur', lat: 24.8170, lng: 93.9368, isMetro: false },
-  { name: 'Shillong', state: 'Meghalaya', lat: 25.5788, lng: 91.8933, isMetro: false },
-  { name: 'Agartala', state: 'Tripura', lat: 23.8315, lng: 91.2868, isMetro: false },
-  { name: 'Gangtok', state: 'Sikkim', lat: 27.3314, lng: 88.6138, isMetro: false },
-  { name: 'Portblair', state: 'Andaman and Nicobar', lat: 11.6234, lng: 92.7265, isMetro: false },
-  { name: 'Vijayawada', state: 'Andhra Pradesh', lat: 16.5062, lng: 80.6480, isMetro: false },
-  { name: 'Guntur', state: 'Andhra Pradesh', lat: 16.3067, lng: 80.4365, isMetro: false },
-  { name: 'Tirupati', state: 'Andhra Pradesh', lat: 13.6288, lng: 79.4192, isMetro: false },
-  { name: 'Warangal', state: 'Telangana', lat: 17.9689, lng: 79.5941, isMetro: false },
-  { name: 'Nizamabad', state: 'Telangana', lat: 18.6726, lng: 78.0941, isMetro: false },
-];
-
+/**
+ * Returns an empty array — the platform no longer ships seed event data.
+ * All events come from live APIs and citizen submissions.
+ * @deprecated Use getStoredEvents() from storage.ts which sources live data.
+ */
+export const INITIAL_WEATHER_EVENTS: WeatherEvent[] = [];
