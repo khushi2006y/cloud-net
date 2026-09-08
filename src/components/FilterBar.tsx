@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { 
   Search, 
   RotateCcw, 
@@ -7,11 +7,12 @@ import {
   ShieldCheck, 
   Radio, 
   Users,
-  Filter
+  Filter,
+  Landmark
 } from 'lucide-react';
 import { Twitter } from './icons/TwitterIcon';
 import { FilterState, EventCategory, ReportSource, VerificationStatus, WeatherMood } from '../types/weather';
-import { CATEGORY_CONFIG, INDIAN_STATES } from '../data/initialEvents';
+import { CATEGORY_CONFIG, INDIAN_STATES, MAJOR_INDIAN_DISTRICTS, DistrictNode } from '../data/initialEvents';
 
 interface FilterBarProps {
   filter: FilterState;
@@ -77,12 +78,20 @@ export const FilterBar: React.FC<FilterBarProps> = ({
     });
   };
 
+  const availableDistricts = useMemo(() => {
+    if (!filter.stateFilter || filter.stateFilter === 'All States') {
+      return MAJOR_INDIAN_DISTRICTS;
+    }
+    return MAJOR_INDIAN_DISTRICTS.filter((d: DistrictNode) => d.state.toLowerCase() === filter.stateFilter.toLowerCase());
+  }, [filter.stateFilter]);
+
   const hasActiveFilters =
     filter.searchQuery ||
     filter.categories.length > 0 ||
     filter.sources.length > 0 ||
     filter.verificationStatuses.length > 0 ||
     filter.stateFilter !== 'All States' ||
+    Boolean(filter.cityFilter) ||
     filter.dateRange !== 'all';
 
   const categories: EventCategory[] = [
@@ -98,15 +107,15 @@ export const FilterBar: React.FC<FilterBarProps> = ({
   return (
     <div className="glass-card p-4 rounded-2xl mb-6 space-y-3.5">
       
-      {/* Row 1: Search, State, Date Preset & Matches */}
-      <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
+      {/* Row 1: Search, State, District, Date Preset & Matches */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-12 gap-3">
         
         {/* Search Input */}
-        <div className="md:col-span-4 relative">
+        <div className="md:col-span-3 relative">
           <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
           <input
             type="text"
-            placeholder="Search city, state, keywords, #hashtag..."
+            placeholder="Search keywords, #hashtag..."
             value={filter.searchQuery}
             onChange={(e) => setFilter(prev => ({ ...prev, searchQuery: e.target.value }))}
             className="w-full glass-input pl-10 pr-4 py-2 rounded-xl text-xs placeholder-slate-400 font-medium"
@@ -118,7 +127,14 @@ export const FilterBar: React.FC<FilterBarProps> = ({
           <MapPin className="w-4 h-4 text-sky-600 absolute left-3.5 top-1/2 -translate-y-1/2" />
           <select
             value={filter.stateFilter}
-            onChange={(e) => setFilter(prev => ({ ...prev, stateFilter: e.target.value }))}
+            onChange={(e) => {
+              const newState = e.target.value;
+              setFilter(prev => ({ 
+                ...prev, 
+                stateFilter: newState,
+                cityFilter: '' // Reset district when state changes
+              }));
+            }}
             className="w-full glass-input pl-10 pr-8 py-2 rounded-xl text-xs appearance-none cursor-pointer font-medium text-slate-700"
           >
             {INDIAN_STATES.map(st => (
@@ -129,15 +145,32 @@ export const FilterBar: React.FC<FilterBarProps> = ({
           </select>
         </div>
 
+        {/* District Filter Dropdown */}
+        <div className="md:col-span-2 relative">
+          <Landmark className="w-4 h-4 text-indigo-600 absolute left-3.5 top-1/2 -translate-y-1/2" />
+          <select
+            value={filter.cityFilter || ''}
+            onChange={(e) => setFilter(prev => ({ ...prev, cityFilter: e.target.value }))}
+            className="w-full glass-input pl-10 pr-8 py-2 rounded-xl text-xs appearance-none cursor-pointer font-medium text-slate-700"
+          >
+            <option value="">All Districts ({availableDistricts.length})</option>
+            {availableDistricts.map((d: DistrictNode) => (
+              <option key={`${d.name}-${d.state}`} value={d.name} className="bg-white text-slate-900">
+                {d.name} {d.isMetro ? '★' : ''}
+              </option>
+            ))}
+          </select>
+        </div>
+
         {/* Date Range Selector */}
-        <div className="md:col-span-3 relative">
+        <div className="md:col-span-2 relative">
           <Calendar className="w-4 h-4 text-sky-600 absolute left-3.5 top-1/2 -translate-y-1/2" />
           <select
             value={filter.dateRange}
             onChange={(e) => setFilter(prev => ({ ...prev, dateRange: e.target.value as any }))}
             className="w-full glass-input pl-10 pr-8 py-2 rounded-xl text-xs appearance-none cursor-pointer font-medium text-slate-700"
           >
-            <option value="all">All Recorded Dates</option>
+            <option value="all">All Dates</option>
             <option value="today">Today Only</option>
             <option value="24h">Last 24 Hours</option>
             <option value="7d">Last 7 Days</option>
@@ -146,7 +179,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
 
         {/* Matches & Reset Button */}
         <div className="md:col-span-2 flex items-center justify-between space-x-2">
-          <span className="text-xs font-semibold text-sky-800 bg-sky-50 px-3 py-2 rounded-xl border border-sky-200 w-full text-center">
+          <span className="text-xs font-semibold text-sky-800 bg-sky-50 px-3 py-2 rounded-xl border border-sky-200 w-full text-center truncate">
             <strong>{totalMatches}</strong> found
           </span>
 
@@ -162,6 +195,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
         </div>
 
       </div>
+
 
       {/* Row 2: 7 Category Filter Buttons with Emojis */}
       <div className="flex flex-wrap items-center gap-1.5 pt-2.5 border-t border-slate-100">
