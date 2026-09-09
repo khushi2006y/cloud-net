@@ -66,6 +66,13 @@ export interface WeatherEvent {
     suspicionScore: number; // 0 to 100
     indicators: string[];
   };
+  isContradictory?: boolean;
+  isImdCorroborated?: boolean;
+  imdCrossCheckResult?: {
+    isMatched: boolean;
+    imdCategory?: EventCategory;
+    note: string;
+  };
   flagReason?: string;
   mergedWithId?: string; // If marked as duplicate, points to primary event ID
   duplicateCount?: number;
@@ -115,6 +122,10 @@ export interface ProcessingRuleResult {
   matchedEventId?: string;
   isFlagged: boolean;
   flagReason?: string;
+  isContradictory: boolean;
+  shouldAutoDelete: boolean;
+  autoDeleteReason?: string;
+  isImdCorroborated?: boolean;
   suggestedCategory: EventCategory;
   confidence: number;
   initialStatus: VerificationStatus;

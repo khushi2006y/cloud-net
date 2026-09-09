@@ -10,7 +10,10 @@ import {
   Sparkles,
   CloudRain,
   Flame,
-  Map as MapIcon
+  Map as MapIcon,
+  ShieldCheck,
+  Clock,
+  CheckCircle2
 } from 'lucide-react';
 
 interface MapViewProps {
@@ -38,6 +41,8 @@ export const MapView: React.FC<MapViewProps> = ({
   
   const [pulseEnabled, setPulseEnabled] = useState<boolean>(true);
   const [mapMode, setMapMode] = useState<'standard' | 'radar' | 'thermal'>('standard');
+  // Strict IMD Verification Gate: Unverified reports do NOT show on map directly until verified by IMD API
+  const [showUnverifiedOnMap, setShowUnverifiedOnMap] = useState<boolean>(false);
 
   // Initialize Leaflet Map
   useEffect(() => {
@@ -121,8 +126,16 @@ export const MapView: React.FC<MapViewProps> = ({
 
     markersGroupRef.current.clearLayers();
 
+    // Strict Verification Filter: Unverified reports do NOT show directly on map until verified/matched with IMD API
+    const mapEligibleEvents = events.filter(event => {
+      if (showUnverifiedOnMap) return true;
+      const isOfficial = event.source === 'api' || event.isOfficialSource === true;
+      const isVerified = event.verificationStatus === 'verified' || event.isImdCorroborated === true;
+      return isOfficial || isVerified;
+    });
+
     // Big Data Optimization: Render top 350 most relevant markers to maintain 60 FPS
-    const markersToRender = events.length > 350 ? events.slice(0, 350) : events;
+    const markersToRender = mapEligibleEvents.length > 350 ? mapEligibleEvents.slice(0, 350) : mapEligibleEvents;
 
     markersToRender.forEach(event => {
       if (isNaN(event.latitude) || isNaN(event.longitude)) return;
@@ -130,8 +143,8 @@ export const MapView: React.FC<MapViewProps> = ({
       const config = CATEGORY_CONFIG[event.category] || CATEGORY_CONFIG.rainfall;
       const isSevere = event.severity === 'severe' || event.severity === 'extreme';
       const isSelected = selectedEvent?.id === event.id;
-
       const isHyperlocal = event.id.includes('hyperlocal');
+      const isUnverifiedTriage = event.verificationStatus === 'unverified' && !event.isImdCorroborated && event.source !== 'api';
 
       // Custom Clean Frosted HTML Marker Pin
       const markerHtml = `
@@ -228,7 +241,7 @@ export const MapView: React.FC<MapViewProps> = ({
 
       marker.addTo(markersGroupRef.current!);
     });
-  }, [events, pulseEnabled, selectedEvent, onSelectEvent, onOpenDetails, onMoodChange]);
+  }, [events, pulseEnabled, selectedEvent, onSelectEvent, onOpenDetails, onMoodChange, showUnverifiedOnMap]);
 
   // Center on selected event
   useEffect(() => {
@@ -275,11 +288,26 @@ export const MapView: React.FC<MapViewProps> = ({
       {/* Top Left Floating Header with Layer Switcher */}
       <div className="absolute top-4 left-4 z-10 flex flex-col space-y-2">
         <div className="bg-white/90 backdrop-blur-md px-3.5 py-1.5 rounded-2xl text-xs font-bold text-slate-800 flex items-center space-x-2 border border-slate-200/80 shadow-md">
-          <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
-          <span>IMD National Weather Map</span>
-          <span className="text-[11px] font-mono text-sky-700 bg-sky-50 px-2 py-0.5 rounded-full border border-sky-200">
-            {events.length} Events
+          <ShieldCheck className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+          <span>IMD Verified Grid</span>
+          <span className="text-[10px] font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+            {events.filter(e => e.source === 'api' || e.verificationStatus === 'verified' || e.isImdCorroborated).length} Corroborated
           </span>
+          {events.filter(e => e.verificationStatus === 'unverified' && !e.isImdCorroborated && e.source !== 'api').length > 0 && (
+            <button
+              onClick={() => setShowUnverifiedOnMap(!showUnverifiedOnMap)}
+              className={`text-[10px] font-bold px-2 py-0.5 rounded-full border transition-all cursor-pointer ${
+                showUnverifiedOnMap
+                  ? 'bg-amber-500 text-white border-amber-600 shadow-xs'
+                  : 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100'
+              }`}
+              title="Toggle display of unverified triage reports on map"
+            >
+              {showUnverifiedOnMap 
+                ? 'Hide Triage' 
+                : `+${events.filter(e => e.verificationStatus === 'unverified' && !e.isImdCorroborated && e.source !== 'api').length} in Triage`}
+            </button>
+          )}
         </div>
 
         {/* Interactive Map Mode Layer Switcher */}

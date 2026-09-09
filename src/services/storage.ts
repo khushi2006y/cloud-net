@@ -80,7 +80,15 @@ export function addEventWithProcessing(
   rawEvent: Omit<WeatherEvent, 'id' | 'verificationStatus' | 'confidenceScore'> & {
     id?: string;
   }
-): { event: WeatherEvent; isDuplicate: boolean; isFlagged: boolean; flagReason?: string } {
+): { 
+  event: WeatherEvent; 
+  isDuplicate: boolean; 
+  isFlagged: boolean; 
+  isContradictory?: boolean;
+  isDeleted?: boolean;
+  deleteReason?: string;
+  flagReason?: string; 
+} {
   const currentEvents = getStoredEvents();
 
   const ruleResult = evaluateEventRules(
@@ -114,6 +122,23 @@ export function addEventWithProcessing(
     duplicateCount: ruleResult.isDuplicate ? 1 : 0
   };
 
+  // If contradictory, automatically delete/reject immediately: DO NOT SAVE TO DATABASE!
+  if (ruleResult.shouldAutoDelete) {
+    return {
+      event: {
+        ...fullEvent,
+        isContradictory: true,
+        verificationStatus: 'flagged'
+      },
+      isDuplicate: false,
+      isFlagged: true,
+      isContradictory: true,
+      isDeleted: true,
+      deleteReason: ruleResult.autoDeleteReason || ruleResult.flagReason,
+      flagReason: ruleResult.autoDeleteReason || ruleResult.flagReason
+    };
+  }
+
   // If duplicate, also increment duplicate count on the parent event
   let updatedList = [fullEvent, ...currentEvents];
   if (ruleResult.isDuplicate && ruleResult.matchedEventId) {
@@ -130,6 +155,8 @@ export function addEventWithProcessing(
     event: fullEvent,
     isDuplicate: ruleResult.isDuplicate,
     isFlagged: ruleResult.isFlagged,
+    isContradictory: false,
+    isDeleted: false,
     flagReason: ruleResult.flagReason
   };
 }

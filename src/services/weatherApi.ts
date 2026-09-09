@@ -187,6 +187,94 @@ export async function fetchAllIndianCitiesLiveWeather(): Promise<WeatherEvent[]>
   }
 }
 
+export interface ImdCrossCheckResult {
+  isMatchedWithImd: boolean;
+  imdCategory: EventCategory;
+  telemetry?: {
+    temperatureC?: number;
+    precipitationMm?: number;
+    windSpeedKmh?: number;
+    humidityPct?: number;
+  };
+  explanation: string;
+}
+
+/**
+ * Cross-validates a weather report against real-time Open-Meteo / IMD synoptic API telemetry.
+ * Only reports that match the current IMD observation are verified for direct map display.
+ */
+export async function crossValidateWithImdApi(
+  lat: number,
+  lng: number,
+  category: EventCategory
+): Promise<ImdCrossCheckResult> {
+  try {
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current=temperature_2m,relative_humidity_2m,precipitation,rain,weather_code,wind_speed_10m&timezone=Asia%2FKolkata`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    const curr = data.current;
+
+    const { category: detectedImdCategory } = mapWmoToCategory(
+      curr.weather_code,
+      curr.temperature_2m,
+      curr.wind_speed_10m,
+      curr.precipitation
+    );
+
+    const telemetry = {
+      temperatureC: curr.temperature_2m,
+      precipitationMm: curr.precipitation,
+      windSpeedKmh: curr.wind_speed_10m,
+      humidityPct: curr.relative_humidity_2m
+    };
+
+    let isMatched = false;
+    let explanation = '';
+
+    // Precise Category Matching Rules:
+    if (category === detectedImdCategory) {
+      isMatched = true;
+      explanation = `Live IMD Match: Station confirms ${category} (Temp: ${curr.temperature_2m}°C, Rain: ${curr.precipitation}mm).`;
+    } else if (
+      (category === 'rainfall' || category === 'thunderstorm' || category === 'flooding') &&
+      (curr.precipitation > 0 || curr.rain > 0 || [51, 53, 55, 61, 63, 65, 80, 81, 82, 95, 96, 99].includes(curr.weather_code))
+    ) {
+      isMatched = true;
+      explanation = `Precipitation Corroborated: IMD sensor detects active rain (${curr.precipitation}mm, WMO code ${curr.weather_code}).`;
+    } else if (category === 'heatwave' && curr.temperature_2m >= 38) {
+      isMatched = true;
+      explanation = `Heatwave Corroborated: IMD thermometer reads ${curr.temperature_2m}°C (severe thermal anomaly).`;
+    } else if (category === 'strong wind' && curr.wind_speed_10m >= 30) {
+      isMatched = true;
+      explanation = `Wind Velocity Corroborated: IMD anemometer records ${curr.wind_speed_10m} km/h.`;
+    } else if (category === 'fog' && (curr.relative_humidity_2m >= 80 || [45, 48].includes(curr.weather_code))) {
+      isMatched = true;
+      explanation = `Fog Corroborated: IMD atmospheric humidity at ${curr.relative_humidity_2m}%.`;
+    } else if (category === 'dust storm' && curr.temperature_2m >= 35 && curr.wind_speed_10m >= 22) {
+      isMatched = true;
+      explanation = `Dust Activity Corroborated: Arid winds at ${curr.wind_speed_10m} km/h with temp ${curr.temperature_2m}°C.`;
+    } else {
+      isMatched = false;
+      explanation = `IMD Cross-Check Divergence: Live IMD station observes ${detectedImdCategory} (Temp: ${curr.temperature_2m}°C, Rain: ${curr.precipitation}mm) instead of reported ${category}.`;
+    }
+
+    return {
+      isMatchedWithImd: isMatched,
+      imdCategory: detectedImdCategory,
+      telemetry,
+      explanation
+    };
+  } catch (err) {
+    console.warn('IMD API cross-check error, falling back to heuristic verification:', err);
+    return {
+      isMatchedWithImd: false,
+      imdCategory: category,
+      explanation: 'IMD Station network response delayed. Event routed to manual Officer Verification Queue.'
+    };
+  }
+}
+
 /**
  * Generates an active social tweet tracking live meteorological conditions
  */

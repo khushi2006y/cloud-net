@@ -8,14 +8,19 @@ import {
   Send, 
   CloudRain,
   ShieldCheck,
-  Sparkles
+  Sparkles,
+  AlertOctagon,
+  Clock,
+  Radio,
+  Loader2,
+  AlertTriangle
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { EventCategory, SeverityLevel, WeatherEvent, WeatherMood } from '../types/weather';
 import { CATEGORY_CONFIG, INDIAN_STATES, MAJOR_INDIAN_CITIES } from '../data/initialEvents';
-import { addEventWithProcessing } from '../services/storage';
-import { saveUserReport } from '../services/storage';
-
+import { addEventWithProcessing, saveUserReport } from '../services/storage';
+import { checkContradiction } from '../services/processingEngine';
+import { crossValidateWithImdApi, ImdCrossCheckResult } from '../services/weatherApi';
 
 interface CitizenReportModalProps {
   isOpen: boolean;
@@ -48,6 +53,12 @@ export const CitizenReportModal: React.FC<CitizenReportModalProps> = ({
   const [mediaUrl, setMediaUrl] = useState('');
   const [isLocating, setIsLocating] = useState(false);
   const [locationSuccess, setLocationSuccess] = useState(false);
+
+  // Contradiction and IMD Cross-Validation States
+  const [isCrossCheckingImd, setIsCrossCheckingImd] = useState<boolean>(false);
+  const [contradictionAlert, setContradictionAlert] = useState<{ reason: string; term: string } | null>(null);
+  const [imdCrossCheckResult, setImdCrossCheckResult] = useState<ImdCrossCheckResult | null>(null);
+
   const [submissionResult, setSubmissionResult] = useState<{
     event: WeatherEvent;
     isDuplicate: boolean;
@@ -119,13 +130,41 @@ export const CitizenReportModal: React.FC<CitizenReportModalProps> = ({
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setContradictionAlert(null);
 
     if (!description.trim()) {
       alert('Please describe what you are observing.');
       return;
     }
+
+    // 1. Meteorological Self-Contradiction Check (Auto-Delete / Reject)
+    const contradiction = checkContradiction(description, category);
+    if (contradiction.isContradictory) {
+      setContradictionAlert({
+        reason: contradiction.reason || 'Meteorological Self-Contradiction Detected',
+        term: contradiction.matchedContradictionTerm || 'contradictory weather claim'
+      });
+      return; // Do NOT submit, do NOT save, reject immediately!
+    }
+
+    // 2. Real-Time IMD Synoptic API Cross-Validation Check
+    setIsCrossCheckingImd(true);
+    let imdCheck: ImdCrossCheckResult | null = null;
+    try {
+      imdCheck = await crossValidateWithImdApi(
+        Number(latitude) || 19.0760, 
+        Number(longitude) || 72.8777, 
+        category
+      );
+    } catch (err) {
+      console.warn('IMD API live cross check error:', err);
+    }
+    setIsCrossCheckingImd(false);
+    setImdCrossCheckResult(imdCheck);
+
+    const isVerifiedByImd = Boolean(imdCheck?.isMatchedWithImd);
 
     const title = `${CATEGORY_CONFIG[category].label} in ${city}`;
 
@@ -143,29 +182,48 @@ export const CitizenReportModal: React.FC<CitizenReportModalProps> = ({
       description: description.trim(),
       rawText: description.trim(),
       mediaUrl: mediaUrl || undefined,
-      mediaType: mediaUrl ? 'image' : 'none'
+      mediaType: mediaUrl ? 'image' : 'none',
+      isImdCorroborated: isVerifiedByImd,
+      imdCrossCheckResult: imdCheck ? {
+        isMatched: imdCheck.isMatchedWithImd,
+        imdCategory: imdCheck.imdCategory,
+        note: imdCheck.explanation
+      } : undefined
     });
+
+    // If processing engine marked it as contradictory or auto-deleted
+    if (result.isFlagged && result.event.isContradictory) {
+      setContradictionAlert({
+        reason: result.flagReason || 'Report contradicts itself and was automatically discarded.',
+        term: 'Contradiction'
+      });
+      return;
+    }
 
     setSubmissionResult(result);
     onReportSubmitted(result.event);
 
-    // ── Save a copy to user's personal report history (My Reports) ──
+    // Save a copy to user's personal report history
     saveUserReport(result.event);
 
-    
     if (onMoodChange) {
       onMoodChange(category);
     }
 
-    confetti({
-      particleCount: 70,
-      spread: 70,
-      origin: { y: 0.6 }
-    });
+    // Confetti only if verified by IMD API
+    if (isVerifiedByImd) {
+      confetti({
+        particleCount: 70,
+        spread: 70,
+        origin: { y: 0.6 }
+      });
+    }
   };
 
   const handleResetModal = () => {
     setSubmissionResult(null);
+    setContradictionAlert(null);
+    setImdCrossCheckResult(null);
     setDescription('');
     setMediaUrl('');
     onClose();
@@ -203,7 +261,7 @@ export const CitizenReportModal: React.FC<CitizenReportModalProps> = ({
 
           <button
             onClick={handleResetModal}
-            className="p-2 rounded-xl bg-slate-100 text-slate-500 hover:text-slate-800 transition-colors"
+            className="p-2 rounded-xl bg-slate-100 text-slate-500 hover:text-slate-800 transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
@@ -211,56 +269,98 @@ export const CitizenReportModal: React.FC<CitizenReportModalProps> = ({
 
         {/* Content */}
         <div className="p-6">
+          
+          {/* Contradiction Alert Box (Auto-Delete Notice) */}
+          {contradictionAlert && (
+            <div className="mb-4 p-4 rounded-2xl bg-rose-50 border-2 border-rose-300 text-rose-950 space-y-2 animate-in fade-in">
+              <div className="flex items-center space-x-2 font-bold text-sm text-rose-700">
+                <AlertOctagon className="w-5 h-5 text-rose-600 flex-shrink-0" />
+                <span>Report Rejected & Auto-Deleted: Contradiction Detected</span>
+              </div>
+              <p className="text-xs leading-relaxed text-slate-700">
+                {contradictionAlert.reason}
+              </p>
+              <div className="text-[11px] text-rose-800 bg-white/90 p-2.5 rounded-xl border border-rose-200">
+                ⚠️ <strong>AI Contradiction Rule:</strong> A report claiming <strong>{CATEGORY_CONFIG[category].label}</strong> cannot simultaneously state <strong>"{contradictionAlert.term}"</strong>. Contradictory records corrupt the national meteorological alert system and are discarded immediately.
+              </div>
+              <div className="pt-1 flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => setContradictionAlert(null)}
+                  className="px-3 py-1.5 rounded-lg bg-rose-600 text-white font-bold text-xs hover:bg-rose-500 transition-colors cursor-pointer"
+                >
+                  Edit and Correct Report
+                </button>
+              </div>
+            </div>
+          )}
+
           {submissionResult ? (
             <div className="text-center py-6 space-y-4">
-              <div className="w-16 h-16 rounded-full bg-emerald-100 text-emerald-600 border border-emerald-200 flex items-center justify-center mx-auto shadow-sm">
-                <CheckCircle2 className="w-8 h-8" />
+              <div className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto shadow-sm ${
+                submissionResult.event.isImdCorroborated || submissionResult.event.verificationStatus === 'verified'
+                  ? 'bg-emerald-100 text-emerald-600 border border-emerald-200'
+                  : 'bg-amber-100 text-amber-600 border border-amber-200'
+              }`}>
+                {submissionResult.event.isImdCorroborated || submissionResult.event.verificationStatus === 'verified' ? (
+                  <CheckCircle2 className="w-8 h-8" />
+                ) : (
+                  <Clock className="w-8 h-8" />
+                )}
               </div>
 
               <div>
-                <h4 className="text-lg font-bold text-slate-900">Report Successfully Logged!</h4>
+                <h4 className="text-lg font-bold text-slate-900">
+                  {submissionResult.event.isImdCorroborated || submissionResult.event.verificationStatus === 'verified'
+                    ? 'Verified by IMD API & Published to Live Map!'
+                    : 'Report Logged — Held in Triage (Hidden from Map)'}
+                </h4>
                 <p className="text-xs font-mono text-slate-500 mt-1">
                   Incident Reference: <strong>{submissionResult.event.id}</strong>
                 </p>
               </div>
 
+              {/* IMD API Verification & Corroboration Badge */}
               <div className={`p-4 rounded-2xl border text-left text-xs font-medium ${
-                submissionResult.isDuplicate
-                  ? 'bg-purple-50 border-purple-200 text-purple-900'
-                  : submissionResult.isFlagged
-                  ? 'bg-rose-50 border-rose-200 text-rose-900'
-                  : 'bg-emerald-50 border-emerald-200 text-emerald-900'
+                submissionResult.event.isImdCorroborated || submissionResult.event.verificationStatus === 'verified'
+                  ? 'bg-emerald-50 border-emerald-200 text-emerald-950'
+                  : 'bg-amber-50 border-amber-200 text-amber-950'
               }`}>
-                <div className="flex items-center space-x-2 font-bold mb-1">
-                  <ShieldCheck className="w-4 h-4" />
-                  <span>AI Verification Result: {submissionResult.event.verificationStatus.toUpperCase()}</span>
+                <div className="flex items-center justify-between font-bold mb-1.5">
+                  <span className="flex items-center space-x-1.5">
+                    <ShieldCheck className="w-4 h-4" />
+                    <span>
+                      {submissionResult.event.isImdCorroborated 
+                        ? 'IMD API Corroboration: MATCH CONFIRMED' 
+                        : 'IMD API Corroboration: DIVERGENCE (PENDING TRIAGE)'}
+                    </span>
+                  </span>
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase ${
+                    submissionResult.event.isImdCorroborated ? 'bg-emerald-200 text-emerald-900' : 'bg-amber-200 text-amber-900'
+                  }`}>
+                    {submissionResult.event.isImdCorroborated ? 'Live on Map' : 'Held in Triage'}
+                  </span>
                 </div>
-                
-                {submissionResult.isDuplicate && (
-                  <p className="text-slate-600">
-                    Nearby event detected in {submissionResult.event.city}. Merged into active incident cluster.
-                  </p>
-                )}
 
-                {submissionResult.isFlagged && (
-                  <p className="text-slate-600">
-                    {submissionResult.flagReason}
-                  </p>
-                )}
+                <p className="text-slate-700 text-xs leading-relaxed">
+                  {submissionResult.event.isImdCorroborated
+                    ? `✓ Real-time telemetry from IMD station network in ${city} confirms matching atmospheric conditions. Your report is now directly visible on the National Live Map.`
+                    : `⚠️ The current IMD synoptic station in ${city} does not yet observe this weather anomaly. To prevent public misinformation, your report is securely stored in the Officer Verification Queue and is HIDDEN from the public map until verified.`}
+                </p>
 
-                {!submissionResult.isDuplicate && !submissionResult.isFlagged && (
-                  <p className="text-slate-600">
-                    Clean report accepted with an initial AI confidence rating of {submissionResult.event.confidenceScore}%.
-                  </p>
+                {submissionResult.event.imdCrossCheckResult?.note && (
+                  <div className="mt-2 text-[11px] font-mono bg-white/90 p-2 rounded-xl border border-slate-200 text-slate-600">
+                    IMD Station Telemetry: {submissionResult.event.imdCrossCheckResult.note}
+                  </div>
                 )}
               </div>
 
-              <div className="pt-3 flex justify-center">
+              <div className="pt-3 flex justify-center space-x-3">
                 <button
                   onClick={handleResetModal}
                   className="px-6 py-2.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs shadow-md shadow-sky-600/20 transition-all cursor-pointer"
                 >
-                  View on Live Map
+                  {submissionResult.event.isImdCorroborated ? 'View on Live Map' : 'Close and Return'}
                 </button>
               </div>
             </div>
@@ -270,7 +370,7 @@ export const CitizenReportModal: React.FC<CitizenReportModalProps> = ({
               {/* Step 1: Select Event Category */}
               <div>
                 <label className="block text-slate-700 font-bold mb-1.5">
-                  1. What weather event are you seeing? <span className="text-rose-500">*</span>
+                  1. What weather event are you observing? <span className="text-rose-500">*</span>
                 </label>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   {categories.map(catKey => {
@@ -281,50 +381,56 @@ export const CitizenReportModal: React.FC<CitizenReportModalProps> = ({
                       <button
                         type="button"
                         key={catKey}
-                        onClick={() => setCategory(catKey)}
-                        className={`p-2.5 rounded-xl border text-center font-bold text-xs transition-all cursor-pointer flex flex-col items-center justify-center space-y-1 ${
+                        onClick={() => {
+                          setCategory(catKey);
+                          setContradictionAlert(null);
+                        }}
+                        className={`p-2.5 rounded-2xl border text-left transition-all cursor-pointer ${
                           isSelected
-                            ? 'bg-slate-900 text-white border-slate-900 shadow-sm scale-102'
-                            : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                            ? 'border-sky-500 ring-2 ring-sky-500/20 shadow-xs'
+                            : 'border-slate-200 hover:border-slate-300 bg-white'
                         }`}
+                        style={{ background: isSelected ? `${config.bgHex}` : undefined }}
                       >
-                        <span className="text-xl">{config.emoji}</span>
-                        <span className="text-[11px] truncate w-full">{config.label}</span>
+                        <div className="text-xl mb-1">{config.emoji}</div>
+                        <div className="font-bold text-slate-900 text-xs">{config.label}</div>
                       </button>
                     );
                   })}
                 </div>
               </div>
 
-              {/* Step 2: Location with 1-Click GPS */}
-              <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
+              {/* Step 2: Location & GPS */}
+              <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <span className="text-slate-800 font-bold flex items-center">
-                    <MapPin className="w-4 h-4 text-sky-600 mr-1" /> 2. Location
-                  </span>
-
+                  <label className="text-slate-700 font-bold">
+                    2. Location & Coordinates <span className="text-rose-500">*</span>
+                  </label>
                   <button
                     type="button"
                     onClick={handleDetectGPS}
                     disabled={isLocating}
-                    className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-bold text-[11px] shadow-sm transition-all cursor-pointer"
+                    className="text-sky-600 hover:text-sky-700 font-semibold flex items-center space-x-1 cursor-pointer"
                   >
-                    <Navigation className={`w-3.5 h-3.5 ${isLocating ? 'animate-spin' : ''}`} />
-                    <span>{isLocating ? 'Detecting GPS...' : '1-Tap Auto GPS'}</span>
+                    <Navigation className="w-3.5 h-3.5" />
+                    <span>{isLocating ? 'Detecting GPS...' : 'Use Device GPS'}</span>
                   </button>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   <div>
                     <label className="block text-slate-500 text-[11px] font-semibold mb-1">City</label>
-                    <input
-                      type="text"
+                    <select
                       value={city}
                       onChange={(e) => handleCitySelect(e.target.value)}
-                      placeholder="e.g. Mumbai"
-                      className="w-full glass-input px-3 py-2 rounded-xl text-xs font-semibold"
-                      required
-                    />
+                      className="w-full glass-input px-3 py-2 rounded-xl text-xs appearance-none cursor-pointer font-semibold"
+                    >
+                      {MAJOR_INDIAN_CITIES.map(c => (
+                        <option key={c.name} value={c.name}>
+                          {c.name} ({c.state})
+                        </option>
+                      ))}
+                    </select>
                   </div>
 
                   <div>
@@ -350,7 +456,7 @@ export const CitizenReportModal: React.FC<CitizenReportModalProps> = ({
                 )}
               </div>
 
-              {/* Step 3: Description & Severity */}
+              {/* Step 3: Description & Observations */}
               <div>
                 <label className="block text-slate-700 font-bold mb-1">
                   3. Description & Observations <span className="text-rose-500">*</span>
@@ -358,8 +464,11 @@ export const CitizenReportModal: React.FC<CitizenReportModalProps> = ({
                 <textarea
                   rows={2}
                   value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  placeholder="Describe the intensity (e.g. 2 feet water on road, trees shaking, heavy thunder)..."
+                  onChange={(e) => {
+                    setDescription(e.target.value);
+                    if (contradictionAlert) setContradictionAlert(null);
+                  }}
+                  placeholder="Describe what you see (e.g. heavy downpour, strong gusts)... Do NOT submit conflicting claims (e.g. rain on a sunny day)."
                   className="w-full glass-input px-3.5 py-2 rounded-xl text-xs resize-none font-medium"
                   required
                 />
@@ -378,7 +487,7 @@ export const CitizenReportModal: React.FC<CitizenReportModalProps> = ({
                         type="button"
                         key={p.label}
                         onClick={() => setMediaUrl(p.url)}
-                        className={`text-[10px] px-2 py-0.5 rounded-md border font-semibold transition-all ${
+                        className={`text-[10px] px-2 py-0.5 rounded-md border font-semibold transition-all cursor-pointer ${
                           mediaUrl === p.url
                             ? 'bg-sky-600 text-white border-sky-600'
                             : 'bg-slate-100 text-slate-700 border-slate-200'
@@ -396,7 +505,7 @@ export const CitizenReportModal: React.FC<CitizenReportModalProps> = ({
                     <button
                       type="button"
                       onClick={() => setMediaUrl('')}
-                      className="absolute top-2 right-2 p-1 bg-slate-900/80 text-white rounded-lg hover:bg-slate-900"
+                      className="absolute top-2 right-2 p-1 bg-slate-900/80 text-white rounded-lg hover:bg-slate-900 cursor-pointer"
                     >
                       <X className="w-3.5 h-3.5" />
                     </button>
@@ -408,10 +517,20 @@ export const CitizenReportModal: React.FC<CitizenReportModalProps> = ({
               <div className="pt-2">
                 <button
                   type="submit"
-                  className="w-full py-3 rounded-2xl bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white font-bold text-sm shadow-md shadow-sky-600/20 hover:scale-[1.01] active:scale-[0.99] transition-all flex items-center justify-center space-x-2 cursor-pointer"
+                  disabled={isCrossCheckingImd}
+                  className="w-full py-3 rounded-2xl bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-500 hover:to-blue-500 text-white font-bold text-sm shadow-md shadow-sky-600/20 hover:scale-[1.01] active:scale-[0.99] transition-all flex items-center justify-center space-x-2 cursor-pointer disabled:opacity-50"
                 >
-                  <Send className="w-4 h-4" />
-                  <span>Submit Weather Observation</span>
+                  {isCrossCheckingImd ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Verifying against Live IMD Weather API...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Send className="w-4 h-4" />
+                      <span>Submit & Verify via IMD API</span>
+                    </>
+                  )}
                 </button>
               </div>
 

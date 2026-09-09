@@ -212,6 +212,102 @@ export function detectFakeOrMisleadingReport(params: {
 }
 
 /**
+ * Detects severe internal contradictions in weather reports
+ * e.g., Selecting "rainfall" but describing a "sunny day", "bright sun", or "no rain".
+ * Reports with contradictions are flagged for automatic deletion.
+ */
+export function checkContradiction(text: string, category: EventCategory): {
+  isContradictory: boolean;
+  reason?: string;
+  matchedContradictionTerm?: string;
+  shouldAutoDelete: boolean;
+} {
+  const lower = text.toLowerCase();
+
+  // 1. Rain / Storm / Flood vs Sunny / Dry contradiction
+  const SUNNY_DRY_PATTERNS = [
+    'sunny day', 'bright sun', 'sun is shining', 'clear skies', 'clear sky', 
+    'no rain', 'dry day', 'completely dry', 'bright sunshine', 'hot sun', 
+    'no clouds', 'sunshine', 'not raining', 'not a single drop', 'not a drop of rain', 
+    'dry weather', 'sunny and clear', 'clear and sunny', 'hot and dry', 'dhoop', 'khili dhoop'
+  ];
+
+  if (category === 'rainfall' || category === 'thunderstorm' || category === 'flooding') {
+    for (const pattern of SUNNY_DRY_PATTERNS) {
+      const regex = new RegExp(`\\b${pattern}\\b`, 'i');
+      if (regex.test(lower) || lower.includes(pattern)) {
+        return {
+          isContradictory: true,
+          matchedContradictionTerm: pattern,
+          reason: `Contradiction Detected: Event category is marked as '${category}', but description states '${pattern}'. This report contains direct meteorological self-contradiction and will be automatically deleted.`,
+          shouldAutoDelete: true
+        };
+      }
+    }
+  }
+
+  // 2. Heatwave vs Snow / Freezing contradiction
+  const FREEZING_SNOW_PATTERNS = [
+    'freezing cold', 'snowing', 'heavy snowfall', 'snowfall', 'blizzard', 
+    'ice cold', 'hailstorm', 'sub zero', 'sweater weather', 'cold wave', 'chilly frost'
+  ];
+
+  if (category === 'heatwave') {
+    for (const pattern of FREEZING_SNOW_PATTERNS) {
+      if (lower.includes(pattern)) {
+        return {
+          isContradictory: true,
+          matchedContradictionTerm: pattern,
+          reason: `Contradiction Detected: Event category is marked as 'heatwave', but description states '${pattern}'. This report contains direct meteorological self-contradiction and will be automatically deleted.`,
+          shouldAutoDelete: true
+        };
+      }
+    }
+  }
+
+  // 3. Fog vs Clear Visibility contradiction
+  const CLEAR_VISIBILITY_PATTERNS = [
+    'crystal clear', 'clear visibility', 'visible for miles', 'no haze at all', 'full visibility'
+  ];
+
+  if (category === 'fog') {
+    for (const pattern of CLEAR_VISIBILITY_PATTERNS) {
+      if (lower.includes(pattern)) {
+        return {
+          isContradictory: true,
+          matchedContradictionTerm: pattern,
+          reason: `Contradiction Detected: Event category is marked as 'fog', but description states '${pattern}'. This report contains direct meteorological self-contradiction and will be automatically deleted.`,
+          shouldAutoDelete: true
+        };
+      }
+    }
+  }
+
+  // 4. Dust Storm vs Heavy Flood/Downpour contradiction
+  const WATER_PATTERNS = [
+    'heavy downpour', 'torrential rainfall', 'flash flood', 'streets flooded'
+  ];
+
+  if (category === 'dust storm') {
+    for (const pattern of WATER_PATTERNS) {
+      if (lower.includes(pattern)) {
+        return {
+          isContradictory: true,
+          matchedContradictionTerm: pattern,
+          reason: `Contradiction Detected: Event category is marked as 'dust storm', but description states '${pattern}'. This report contains direct meteorological self-contradiction and will be automatically deleted.`,
+          shouldAutoDelete: true
+        };
+      }
+    }
+  }
+
+  return {
+    isContradictory: false,
+    shouldAutoDelete: false
+  };
+}
+
+/**
  * Evaluates source trustworthiness and reputation scoring
  */
 export function evaluateSourceTrust(
@@ -273,6 +369,30 @@ export function evaluateEventRules(
   },
   existingEvents: WeatherEvent[]
 ): ProcessingRuleResult {
+  // 0. Meteorological Self-Contradiction Check (Immediate Auto-Delete Trigger)
+  const contradiction = checkContradiction(newEvent.text, newEvent.category);
+  if (contradiction.isContradictory) {
+    return {
+      isDuplicate: false,
+      isFlagged: true,
+      flagReason: contradiction.reason || 'Meteorological Self-Contradiction Detected',
+      isContradictory: true,
+      shouldAutoDelete: true,
+      autoDeleteReason: contradiction.reason,
+      suggestedCategory: newEvent.category,
+      confidence: 0,
+      initialStatus: 'flagged',
+      credibilityScore: 0,
+      sourceTrustLevel: 'suspicious',
+      aiFakeDetection: {
+        isMisleading: true,
+        suspicionScore: 100,
+        indicators: [contradiction.reason || 'Direct meteorological self-contradiction']
+      },
+      matchedKeywords: []
+    };
+  }
+
   // 1. Machine Learning Fake & Misleading Detection
   const aiFakeDetection = detectFakeOrMisleadingReport({
     text: newEvent.text,
@@ -299,6 +419,8 @@ export function evaluateEventRules(
       isDuplicate: false,
       isFlagged: true,
       flagReason: aiFakeDetection.indicators.join('; '),
+      isContradictory: false,
+      shouldAutoDelete: false,
       suggestedCategory,
       confidence: Math.max(10, 100 - aiFakeDetection.suspicionScore),
       initialStatus: 'flagged',
@@ -336,6 +458,8 @@ export function evaluateEventRules(
           isDuplicate: true,
           matchedEventId: existing.id,
           isFlagged: false,
+          isContradictory: false,
+          shouldAutoDelete: false,
           suggestedCategory,
           confidence: 88,
           initialStatus: 'duplicate',
@@ -366,6 +490,8 @@ export function evaluateEventRules(
   return {
     isDuplicate: false,
     isFlagged: false,
+    isContradictory: false,
+    shouldAutoDelete: false,
     suggestedCategory,
     confidence: overallConfidence,
     initialStatus,
