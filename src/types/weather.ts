@@ -53,11 +53,19 @@ export interface WeatherEvent {
   mediaUrl?: string;
   mediaType?: 'image' | 'video' | 'none';
   
-  // Processing & Verification Intelligence
+  // Processing & Verification Intelligence (Paragraph 3 Machine Learning & AI)
   verificationStatus: VerificationStatus;
   confidenceScore: number; // 0 to 100
+  credibilityScore?: number; // 0 to 100
+  sourceTrustLevel?: SourceTrustLevel;
   aiClassificationCategory?: EventCategory;
   aiClassificationConfidence?: number;
+  matchedKeywords?: string[];
+  aiFakeDetection?: {
+    isMisleading: boolean;
+    suspicionScore: number; // 0 to 100
+    indicators: string[];
+  };
   flagReason?: string;
   mergedWithId?: string; // If marked as duplicate, points to primary event ID
   duplicateCount?: number;
@@ -71,6 +79,8 @@ export interface WeatherEvent {
     pressureHpa?: number;
   };
 }
+
+export type SourceTrustLevel = 'official' | 'trusted_media' | 'verified_citizen' | 'unverified' | 'suspicious';
 
 export interface FilterState {
   searchQuery: string;
@@ -108,4 +118,12 @@ export interface ProcessingRuleResult {
   suggestedCategory: EventCategory;
   confidence: number;
   initialStatus: VerificationStatus;
+  credibilityScore: number;
+  sourceTrustLevel: SourceTrustLevel;
+  aiFakeDetection: {
+    isMisleading: boolean;
+    suspicionScore: number;
+    indicators: string[];
+  };
+  matchedKeywords: string[];
 }

@@ -103,8 +103,12 @@ export function addEventWithProcessing(
     id: newId,
     verificationStatus: ruleResult.initialStatus,
     confidenceScore: ruleResult.confidence,
+    credibilityScore: ruleResult.credibilityScore,
+    sourceTrustLevel: ruleResult.sourceTrustLevel,
     aiClassificationCategory: ruleResult.suggestedCategory,
     aiClassificationConfidence: ruleResult.confidence,
+    matchedKeywords: ruleResult.matchedKeywords,
+    aiFakeDetection: ruleResult.aiFakeDetection,
     flagReason: ruleResult.flagReason,
     mergedWithId: ruleResult.matchedEventId,
     duplicateCount: ruleResult.isDuplicate ? 1 : 0
@@ -128,6 +132,47 @@ export function addEventWithProcessing(
     isFlagged: ruleResult.isFlagged,
     flagReason: ruleResult.flagReason
   };
+}
+
+export function mergeDuplicateCluster(parentId: string, duplicateIds: string[]): WeatherEvent[] {
+  const currentEvents = getStoredEvents();
+  const updated = currentEvents.map(e => {
+    if (e.id === parentId) {
+      return {
+        ...e,
+        duplicateCount: (e.duplicateCount || 0) + duplicateIds.length,
+        confidenceScore: Math.min(99, e.confidenceScore + 5)
+      };
+    }
+    if (duplicateIds.includes(e.id)) {
+      return {
+        ...e,
+        verificationStatus: 'duplicate' as VerificationStatus,
+        mergedWithId: parentId
+      };
+    }
+    return e;
+  });
+
+  saveEvents(updated);
+  return updated;
+}
+
+export function batchVerifyEvents(ids: string[], newStatus: VerificationStatus): WeatherEvent[] {
+  const currentEvents = getStoredEvents();
+  const updated = currentEvents.map(e => {
+    if (ids.includes(e.id)) {
+      return {
+        ...e,
+        verificationStatus: newStatus,
+        confidenceScore: newStatus === 'verified' ? Math.max(e.confidenceScore, 95) : e.confidenceScore
+      };
+    }
+    return e;
+  });
+
+  saveEvents(updated);
+  return updated;
 }
 
 export function updateEventStatus(

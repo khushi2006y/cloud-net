@@ -151,7 +151,7 @@ export const EventDetailModal: React.FC<EventDetailModalProps> = ({
             </div>
 
             <div className="p-3 rounded-2xl bg-slate-50 border border-slate-100">
-              <span className="text-[10px] text-slate-400 uppercase font-bold">Source</span>
+              <span className="text-[10px] text-slate-400 uppercase font-bold">Source & Trust</span>
               <div className="capitalize font-bold text-slate-900 mt-0.5 flex items-center space-x-1">
                 {event.source === 'twitter' && <Twitter className="w-3 h-3 text-sky-600" />}
                 {event.source === 'api' && <Radio className="w-3 h-3 text-teal-600" />}
@@ -161,10 +161,15 @@ export const EventDetailModal: React.FC<EventDetailModalProps> = ({
               <div className="text-[10px] text-slate-500 truncate">
                 {event.sourceAuthor}
               </div>
+              {event.sourceTrustLevel && (
+                <span className="inline-block mt-1 px-1.5 py-0.5 rounded text-[9px] font-extrabold uppercase bg-sky-100 text-sky-800">
+                  {event.sourceTrustLevel}
+                </span>
+              )}
             </div>
 
             <div className="p-3 rounded-2xl bg-slate-50 border border-slate-100">
-              <span className="text-[10px] text-slate-400 uppercase font-bold">Status</span>
+              <span className="text-[10px] text-slate-400 uppercase font-bold">Status & AI Score</span>
               <div className="mt-0.5">
                 <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
                   event.verificationStatus === 'verified' ? 'bg-emerald-100 text-emerald-800' :
@@ -176,9 +181,64 @@ export const EventDetailModal: React.FC<EventDetailModalProps> = ({
                 </span>
               </div>
               <div className="text-[10px] font-mono text-slate-500 mt-0.5">
-                Score: {event.confidenceScore}%
+                AI Confidence: <strong>{event.confidenceScore}%</strong>
               </div>
             </div>
+          </div>
+
+          {/* Machine Learning & AI Verification Intelligence Forensics */}
+          <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-900 flex items-center space-x-1.5">
+                <Sparkles className="w-3.5 h-3.5 text-sky-600" />
+                <span>AI Automated Verification & Forensics</span>
+              </span>
+              <span className={`text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full ${
+                event.aiFakeDetection?.isMisleading 
+                  ? 'bg-rose-100 text-rose-800 border border-rose-200' 
+                  : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+              }`}>
+                {event.aiFakeDetection?.isMisleading ? '⚠️ Fake/Misleading Risk' : '✓ Clean Corroboration'}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-xs">
+              <div className="p-2 bg-white rounded-xl border border-slate-200">
+                <span className="text-[10px] text-slate-400 font-medium">Credibility</span>
+                <p className="font-mono text-slate-900 font-extrabold">{event.credibilityScore ?? event.confidenceScore}%</p>
+              </div>
+              <div className="p-2 bg-white rounded-xl border border-slate-200">
+                <span className="text-[10px] text-slate-400 font-medium">Fake Suspicion</span>
+                <p className={`font-mono font-extrabold ${
+                  (event.aiFakeDetection?.suspicionScore ?? 0) > 40 ? 'text-rose-600' : 'text-emerald-600'
+                }`}>
+                  {event.aiFakeDetection?.suspicionScore ?? 12}%
+                </p>
+              </div>
+              <div className="p-2 bg-white rounded-xl border border-slate-200">
+                <span className="text-[10px] text-slate-400 font-medium">Duplicate Status</span>
+                <p className="font-mono text-slate-900 font-bold">
+                  {event.verificationStatus === 'duplicate' ? 'Duplicate' : (event.duplicateCount ? `${event.duplicateCount} merged` : 'Unique')}
+                </p>
+              </div>
+              <div className="p-2 bg-white rounded-xl border border-slate-200">
+                <span className="text-[10px] text-slate-400 font-medium">NLP Tokens</span>
+                <p className="font-mono text-sky-700 font-bold truncate">
+                  {event.matchedKeywords && event.matchedKeywords.length > 0 ? event.matchedKeywords.slice(0, 2).join(', ') : 'Direct Match'}
+                </p>
+              </div>
+            </div>
+
+            {event.aiFakeDetection?.indicators && event.aiFakeDetection.indicators.length > 0 && (
+              <div className="text-[11px] text-rose-700 bg-rose-50 p-2 rounded-xl border border-rose-100 space-y-0.5">
+                <span className="font-bold">Detected AI Indicators:</span>
+                <ul className="list-disc list-inside">
+                  {event.aiFakeDetection.indicators.map((ind, i) => (
+                    <li key={i}>{ind}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </div>
 
           {/* Real-time Live Hourly Forecast Section (Pulled Live from Open-Meteo) */}
