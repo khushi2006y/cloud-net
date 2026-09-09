@@ -13,7 +13,8 @@ import {
   Clock,
   Radio,
   Loader2,
-  AlertTriangle
+  AlertTriangle,
+  WifiOff
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { EventCategory, SeverityLevel, WeatherEvent, WeatherMood } from '../types/weather';
@@ -21,12 +22,15 @@ import { CATEGORY_CONFIG, INDIAN_STATES, MAJOR_INDIAN_CITIES } from '../data/ini
 import { addEventWithProcessing, saveUserReport } from '../services/storage';
 import { checkContradiction } from '../services/processingEngine';
 import { crossValidateWithImdApi, ImdCrossCheckResult } from '../services/weatherApi';
+import { connectivityManager } from '../services/connectivityService';
+import { offlineStorage, PendingReport } from '../services/offlineStorage';
 
 interface CitizenReportModalProps {
   isOpen: boolean;
   onClose: () => void;
   onReportSubmitted: (newEvent: WeatherEvent) => void;
   onMoodChange?: (mood: WeatherMood) => void;
+  prefilledLocation?: { city: string; state?: string; lat: number; lng: number } | null;
 }
 
 const PRESET_DEMO_PHOTOS = [
@@ -40,7 +44,8 @@ export const CitizenReportModal: React.FC<CitizenReportModalProps> = ({
   isOpen,
   onClose,
   onReportSubmitted,
-  onMoodChange
+  onMoodChange,
+  prefilledLocation
 }) => {
   const [authorName, setAuthorName] = useState('');
   const [category, setCategory] = useState<EventCategory>('rainfall');
@@ -54,6 +59,17 @@ export const CitizenReportModal: React.FC<CitizenReportModalProps> = ({
   const [isLocating, setIsLocating] = useState(false);
   const [locationSuccess, setLocationSuccess] = useState(false);
 
+  // Sync prefilled location if provided from map search
+  React.useEffect(() => {
+    if (isOpen && prefilledLocation) {
+      setCity(prefilledLocation.city);
+      if (prefilledLocation.state) setState(prefilledLocation.state);
+      setLatitude(prefilledLocation.lat);
+      setLongitude(prefilledLocation.lng);
+      setLocationSuccess(true);
+    }
+  }, [isOpen, prefilledLocation]);
+
   // Contradiction and IMD Cross-Validation States
   const [isCrossCheckingImd, setIsCrossCheckingImd] = useState<boolean>(false);
   const [contradictionAlert, setContradictionAlert] = useState<{ reason: string; term: string } | null>(null);
@@ -64,6 +80,7 @@ export const CitizenReportModal: React.FC<CitizenReportModalProps> = ({
     isDuplicate: boolean;
     isFlagged: boolean;
     flagReason?: string;
+    isOfflineQueued?: boolean;
   } | null>(null);
 
   if (!isOpen) return null;
@@ -149,7 +166,69 @@ export const CitizenReportModal: React.FC<CitizenReportModalProps> = ({
       return; // Do NOT submit, do NOT save, reject immediately!
     }
 
-    // 2. Real-Time IMD Synoptic API Cross-Validation Check
+    // Check if device is operating in Offline Emergency Mode
+    if (connectivityManager.getEffectiveStatus() === 'offline') {
+      const pendingId = `evt-offline-${Date.now()}`;
+      const title = `${CATEGORY_CONFIG[category].label} in ${city}`;
+
+      const pendingReport: PendingReport = {
+        id: pendingId,
+        latitude: Number(latitude) || 19.0760,
+        longitude: Number(longitude) || 72.8777,
+        category,
+        severity,
+        title,
+        description: description.trim(),
+        timestamp: new Date().toISOString(),
+        city: city.trim() || 'Unknown City',
+        state: state || 'Maharashtra',
+        authorName: authorName.trim() ? authorName.trim() : 'Citizen Reporter',
+        mediaUrl: mediaUrl || undefined,
+        syncStatus: 'pending',
+        retryCount: 0,
+        idempotencyKey: `idemp-${pendingId}`
+      };
+
+      await offlineStorage.queuePendingReport(pendingReport);
+
+      const localEvent: WeatherEvent = {
+        id: pendingId,
+        source: 'citizen',
+        sourceAuthor: authorName.trim() ? `${authorName.trim()} (Citizen - Offline)` : 'Citizen Reporter (Offline)',
+        timestamp: pendingReport.timestamp,
+        city: pendingReport.city,
+        state: pendingReport.state,
+        latitude: pendingReport.latitude,
+        longitude: pendingReport.longitude,
+        category,
+        severity,
+        title,
+        description: description.trim(),
+        rawText: description.trim(),
+        mediaUrl: mediaUrl || undefined,
+        mediaType: mediaUrl ? 'image' : 'none',
+        verificationStatus: 'unverified',
+        confidenceScore: 75,
+        flagReason: 'Offline Emergency Mode: Stored locally on device. Will auto-sync when network returns.'
+      };
+
+      saveUserReport(localEvent);
+      onReportSubmitted(localEvent);
+
+      setSubmissionResult({
+        event: localEvent,
+        isDuplicate: false,
+        isFlagged: false,
+        isOfflineQueued: true
+      });
+
+      if (onMoodChange) {
+        onMoodChange(category);
+      }
+      return;
+    }
+
+    // 2. Real-Time IMD Synoptic API Cross-Validation Check (Online)
     setIsCrossCheckingImd(true);
     let imdCheck: ImdCrossCheckResult | null = null;
     try {
@@ -298,11 +377,15 @@ export const CitizenReportModal: React.FC<CitizenReportModalProps> = ({
           {submissionResult ? (
             <div className="text-center py-6 space-y-4">
               <div className={`w-16 h-16 rounded-full flex items-center justify-center mx-auto shadow-sm ${
-                submissionResult.event.isImdCorroborated || submissionResult.event.verificationStatus === 'verified'
+                submissionResult.isOfflineQueued
+                  ? 'bg-amber-100 text-amber-700 border border-amber-300'
+                  : submissionResult.event.isImdCorroborated || submissionResult.event.verificationStatus === 'verified'
                   ? 'bg-emerald-100 text-emerald-600 border border-emerald-200'
                   : 'bg-amber-100 text-amber-600 border border-amber-200'
               }`}>
-                {submissionResult.event.isImdCorroborated || submissionResult.event.verificationStatus === 'verified' ? (
+                {submissionResult.isOfflineQueued ? (
+                  <WifiOff className="w-8 h-8" />
+                ) : submissionResult.event.isImdCorroborated || submissionResult.event.verificationStatus === 'verified' ? (
                   <CheckCircle2 className="w-8 h-8" />
                 ) : (
                   <Clock className="w-8 h-8" />
@@ -311,7 +394,9 @@ export const CitizenReportModal: React.FC<CitizenReportModalProps> = ({
 
               <div>
                 <h4 className="text-lg font-bold text-slate-900">
-                  {submissionResult.event.isImdCorroborated || submissionResult.event.verificationStatus === 'verified'
+                  {submissionResult.isOfflineQueued
+                    ? 'Saved Locally — Queued for Automatic Sync!'
+                    : submissionResult.event.isImdCorroborated || submissionResult.event.verificationStatus === 'verified'
                     ? 'Verified by IMD API & Published to Live Map!'
                     : 'Report Logged — Held in Triage (Hidden from Map)'}
                 </h4>
@@ -320,52 +405,86 @@ export const CitizenReportModal: React.FC<CitizenReportModalProps> = ({
                 </p>
               </div>
 
-              {/* IMD API Verification & Corroboration Badge */}
-              <div className={`p-4 rounded-2xl border text-left text-xs font-medium ${
-                submissionResult.event.isImdCorroborated || submissionResult.event.verificationStatus === 'verified'
-                  ? 'bg-emerald-50 border-emerald-200 text-emerald-950'
-                  : 'bg-amber-50 border-amber-200 text-amber-950'
-              }`}>
-                <div className="flex items-center justify-between font-bold mb-1.5">
-                  <span className="flex items-center space-x-1.5">
-                    <ShieldCheck className="w-4 h-4" />
-                    <span>
-                      {submissionResult.event.isImdCorroborated 
-                        ? 'IMD API Corroboration: MATCH CONFIRMED' 
-                        : 'IMD API Corroboration: DIVERGENCE (PENDING TRIAGE)'}
+              {/* IMD API Verification or Offline Queue Badge */}
+              {submissionResult.isOfflineQueued ? (
+                <div className="p-4 rounded-2xl border text-left text-xs font-medium bg-amber-50 border-amber-200 text-amber-950 space-y-2">
+                  <div className="flex items-center justify-between font-bold mb-1">
+                    <span className="flex items-center space-x-1.5 text-amber-900">
+                      <WifiOff className="w-4 h-4 text-amber-600" />
+                      <span>DISASTER OFFLINE QUEUE: STORED ON DEVICE</span>
                     </span>
-                  </span>
-                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase ${
-                    submissionResult.event.isImdCorroborated ? 'bg-emerald-200 text-emerald-900' : 'bg-amber-200 text-amber-900'
-                  }`}>
-                    {submissionResult.event.isImdCorroborated ? 'Live on Map' : 'Held in Triage'}
-                  </span>
-                </div>
-
-                <p className="text-slate-700 text-xs leading-relaxed">
-                  {submissionResult.event.isImdCorroborated
-                    ? `✓ Real-time telemetry from IMD station network in ${city} confirms matching atmospheric conditions. Your report is now directly visible on the National Live Map.`
-                    : `⚠️ The current IMD synoptic station in ${city} does not yet observe this weather anomaly. To prevent public misinformation, your report is securely stored in the Officer Verification Queue and is HIDDEN from the public map until verified.`}
-                </p>
-
-                {submissionResult.event.imdCrossCheckResult?.note && (
-                  <div className="mt-2 text-[11px] font-mono bg-white/90 p-2 rounded-xl border border-slate-200 text-slate-600">
-                    IMD Station Telemetry: {submissionResult.event.imdCrossCheckResult.note}
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-amber-200 text-amber-900">
+                      Auto-Sync Active
+                    </span>
                   </div>
-                )}
-              </div>
+
+                  <p className="text-amber-900 leading-relaxed">
+                    Your weather observation has been securely written to browser IndexedDB storage. As soon as cellular network or Wi-Fi returns, CloudNet will automatically transmit and corroborate this report with the national server.
+                  </p>
+
+                  <div className="text-[11px] font-mono bg-white/90 p-2.5 rounded-xl border border-amber-200 text-amber-800 space-y-0.5">
+                    <div>Status: <strong>PENDING RECONNECT SYNC</strong></div>
+                    <div>Local Area: <strong>{city}, {state}</strong></div>
+                    <div>Timestamp: <strong>{new Date().toLocaleTimeString()}</strong></div>
+                  </div>
+                </div>
+              ) : (
+                <div className={`p-4 rounded-2xl border text-left text-xs font-medium ${
+                  submissionResult.event.isImdCorroborated || submissionResult.event.verificationStatus === 'verified'
+                    ? 'bg-emerald-50 border-emerald-200 text-emerald-950'
+                    : 'bg-amber-50 border-amber-200 text-amber-950'
+                }`}>
+                  <div className="flex items-center justify-between font-bold mb-1.5">
+                    <span className="flex items-center space-x-1.5">
+                      <ShieldCheck className="w-4 h-4" />
+                      <span>
+                        {submissionResult.event.isImdCorroborated 
+                          ? 'IMD API Corroboration: MATCH CONFIRMED' 
+                          : 'IMD API Corroboration: DIVERGENCE (PENDING TRIAGE)'}
+                      </span>
+                    </span>
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase ${
+                      submissionResult.event.isImdCorroborated ? 'bg-emerald-200 text-emerald-900' : 'bg-amber-200 text-amber-900'
+                    }`}>
+                      {submissionResult.event.isImdCorroborated ? 'Live on Map' : 'Held in Triage'}
+                    </span>
+                  </div>
+
+                  <p className="text-slate-700 text-xs leading-relaxed">
+                    {submissionResult.event.isImdCorroborated
+                      ? `✓ Real-time telemetry from IMD station network in ${city} confirms matching atmospheric conditions. Your report is now directly visible on the National Live Map.`
+                      : `⚠️ The current IMD synoptic station in ${city} does not yet observe this weather anomaly. To prevent public misinformation, your report is securely stored in the Officer Verification Queue and is HIDDEN from the public map until verified.`}
+                  </p>
+
+                  {submissionResult.event.imdCrossCheckResult?.note && (
+                    <div className="mt-2 text-[11px] font-mono bg-white/90 p-2 rounded-xl border border-slate-200 text-slate-600">
+                      IMD Station Telemetry: {submissionResult.event.imdCrossCheckResult.note}
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div className="pt-3 flex justify-center space-x-3">
                 <button
                   onClick={handleResetModal}
                   className="px-6 py-2.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs shadow-md shadow-sky-600/20 transition-all cursor-pointer"
                 >
-                  {submissionResult.event.isImdCorroborated ? 'View on Live Map' : 'Close and Return'}
+                  {submissionResult.isOfflineQueued ? 'Return to Emergency View' : submissionResult.event.isImdCorroborated ? 'View on Live Map' : 'Close and Return'}
                 </button>
               </div>
             </div>
           ) : (
             <form onSubmit={handleSubmit} className="space-y-4 text-xs">
+
+              {/* Offline notice in form */}
+              {connectivityManager.getEffectiveStatus() === 'offline' && (
+                <div className="p-3 rounded-2xl bg-amber-50 border border-amber-200 flex items-center space-x-2 text-amber-950 text-xs font-medium">
+                  <WifiOff className="w-4 h-4 text-amber-600 flex-shrink-0" />
+                  <span>
+                    <strong>Offline Emergency Mode:</strong> Cellular network is unreachable. Your report will be saved locally to device memory and uploaded automatically when signal returns.
+                  </span>
+                </div>
+              )}
               
               {/* Step 1: Select Event Category */}
               <div>

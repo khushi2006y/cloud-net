@@ -40,6 +40,7 @@ import {
   batchVerifyEvents
 } from '../services/storage';
 import { findDuplicateClusters } from '../services/processingEngine';
+import { apiClient } from '../services/apiClient';
 
 interface AdminPanelProps {
   events: WeatherEvent[];
@@ -120,21 +121,38 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   }
 
   // Action Handlers
-  const handleVerify = (id: string) => {
-    const updated = updateEventStatus(id, 'verified');
+  const handleVerify = async (id: string) => {
+    const reason = prompt('Enter officer verification reason (mandatory for audit ledger):', 'IMD Doppler Radar corroboration and automated ground station agreement.') || 'Meteorological officer field verification';
+    try {
+      await apiClient.overrideEvent(id, 'VERIFIED', reason);
+    } catch (e) {
+      console.warn('[CloudNet Admin] Backend override sync fallback:', e);
+    }
+    const updated = updateEventStatus(id, 'verified', reason);
     setEvents(updated);
   };
 
-  const handleFlag = (id: string) => {
-    const reason = prompt('Enter flag/fake report reason:', 'Failed meteorological cross-validation or suspicious promotional content.');
+  const handleFlag = async (id: string) => {
+    const reason = prompt('Enter flag/contradiction reason (mandatory for audit ledger):', 'Failed meteorological cross-validation or suspicious promotional content.');
     if (reason !== null) {
+      try {
+        await apiClient.overrideEvent(id, 'FLAGGED', reason);
+      } catch (e) {
+        console.warn('[CloudNet Admin] Backend override sync fallback:', e);
+      }
       const updated = updateEventStatus(id, 'flagged', reason);
       setEvents(updated);
     }
   };
 
-  const handleDuplicate = (id: string) => {
-    const updated = updateEventStatus(id, 'duplicate');
+  const handleDuplicate = async (id: string) => {
+    const reason = prompt('Enter deduplication note (mandatory for audit ledger):', 'Identified as duplicate report within active spatial cluster.') || 'Duplicate event mapped to parent';
+    try {
+      await apiClient.overrideEvent(id, 'DUPLICATE', reason);
+    } catch (e) {
+      console.warn('[CloudNet Admin] Backend override sync fallback:', e);
+    }
+    const updated = updateEventStatus(id, 'duplicate', reason);
     setEvents(updated);
   };
 

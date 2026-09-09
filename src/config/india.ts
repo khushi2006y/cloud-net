@@ -73,6 +73,10 @@ export const MAJOR_INDIAN_CITIES: CityNode[] = [
   // Tier-1 Metros
   { name: 'Mumbai',           state: 'Maharashtra',       lat: 19.0760, lng: 72.8777 },
   { name: 'Delhi',            state: 'Delhi',             lat: 28.6139, lng: 77.2090 },
+  { name: 'Noida',            state: 'Uttar Pradesh',     lat: 28.5355, lng: 77.3910 },
+  { name: 'Gurugram',         state: 'Haryana',           lat: 28.4595, lng: 77.0266 },
+  { name: 'Ghaziabad',        state: 'Uttar Pradesh',     lat: 28.6692, lng: 77.4538 },
+  { name: 'Faridabad',        state: 'Haryana',           lat: 28.4089, lng: 77.3178 },
   { name: 'Bengaluru',        state: 'Karnataka',         lat: 12.9716, lng: 77.5946 },
   { name: 'Chennai',          state: 'Tamil Nadu',        lat: 13.0827, lng: 80.2707 },
   { name: 'Kolkata',          state: 'West Bengal',       lat: 22.5726, lng: 88.3639 },

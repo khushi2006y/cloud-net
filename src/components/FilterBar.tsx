@@ -19,13 +19,15 @@ interface FilterBarProps {
   setFilter: React.Dispatch<React.SetStateAction<FilterState>>;
   totalMatches: number;
   onCategorySelected?: (category: EventCategory) => void;
+  onSearchWeather?: (query: string) => void;
 }
 
 export const FilterBar: React.FC<FilterBarProps> = ({ 
   filter, 
   setFilter, 
   totalMatches,
-  onCategorySelected 
+  onCategorySelected,
+  onSearchWeather
 }) => {
   
   const handleCategoryToggle = (category: EventCategory) => {
@@ -111,15 +113,31 @@ export const FilterBar: React.FC<FilterBarProps> = ({
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-12 gap-3">
         
         {/* Search Input */}
-        <div className="md:col-span-3 relative">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+        <div className="md:col-span-3 relative flex items-center">
+          <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
           <input
             type="text"
-            placeholder="Search keywords, #hashtag..."
+            placeholder="Search keywords, #hashtag, or city..."
             value={filter.searchQuery}
             onChange={(e) => setFilter(prev => ({ ...prev, searchQuery: e.target.value }))}
-            className="w-full glass-input pl-10 pr-4 py-2 rounded-xl text-xs placeholder-slate-400 font-medium"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && filter.searchQuery.trim() && onSearchWeather) {
+                onSearchWeather(filter.searchQuery.trim());
+              }
+            }}
+            className="w-full glass-input pl-10 pr-20 py-2 rounded-xl text-xs placeholder-slate-400 font-medium"
           />
+          {filter.searchQuery.trim().length >= 2 && onSearchWeather && (
+            <button
+              type="button"
+              onClick={() => onSearchWeather(filter.searchQuery.trim())}
+              className="absolute right-1.5 top-1/2 -translate-y-1/2 px-2 py-0.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-[10px] font-bold shadow-xs transition-all cursor-pointer flex items-center space-x-0.5"
+              title="Fetch live weather telemetry for this city"
+            >
+              <span>Weather</span>
+              <span>➔</span>
+            </button>
+          )}
         </div>
 
         {/* State Filter Dropdown */}

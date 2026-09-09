@@ -23,3 +23,14 @@ dist-ssr
 .vscode/*
 !.vscode/extensions.json
 *.sw?
+
+# Python & SQLite
+*.db
+*.sqlite3
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+backend/venv/
+venv/
+.env

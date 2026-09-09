@@ -6,15 +6,20 @@ import {
   Crosshair, 
   Maximize2, 
   Radio, 
-  Layers,
-  Sparkles,
-  CloudRain,
-  Flame,
-  Map as MapIcon,
-  ShieldCheck,
-  Clock,
-  CheckCircle2
+  Layers, 
+  Sparkles, 
+  CloudRain, 
+  Flame, 
+  Map as MapIcon, 
+  ShieldCheck, 
+  Clock, 
+  CheckCircle2,
+  ShieldAlert,
+  WifiOff
 } from 'lucide-react';
+import { useConnectivity } from '../services/connectivityService';
+import { offlineStorage, OfflineSnapshot } from '../services/offlineStorage';
+import { OfflineEmergencyMap } from './OfflineEmergencyMap';
 
 interface MapViewProps {
   events: WeatherEvent[];
@@ -43,6 +48,14 @@ export const MapView: React.FC<MapViewProps> = ({
   const [mapMode, setMapMode] = useState<'standard' | 'radar' | 'thermal'>('standard');
   // Strict IMD Verification Gate: Unverified reports do NOT show on map directly until verified by IMD API
   const [showUnverifiedOnMap, setShowUnverifiedOnMap] = useState<boolean>(false);
+
+  const { isOffline, isDegraded } = useConnectivity();
+  const [useTacticalMap, setUseTacticalMap] = useState<boolean>(false);
+  const [offlineSnapshot, setOfflineSnapshot] = useState<OfflineSnapshot | null>(null);
+
+  useEffect(() => {
+    offlineStorage.getOfflineSnapshot().then((snap) => setOfflineSnapshot(snap));
+  }, [isOffline]);
 
   // Initialize Leaflet Map
   useEffect(() => {
@@ -280,6 +293,27 @@ export const MapView: React.FC<MapViewProps> = ({
     );
   };
 
+  if (useTacticalMap) {
+    return (
+      <div className="relative w-full rounded-3xl overflow-hidden shadow-2xl">
+        <OfflineEmergencyMap
+          snapshot={offlineSnapshot}
+          events={events}
+          onSelectEvent={onSelectEvent}
+        />
+        <div className="absolute top-4 right-4 z-20 flex items-center space-x-2">
+          <button
+            onClick={() => setUseTacticalMap(false)}
+            className="px-3.5 py-1.5 rounded-2xl bg-white/95 hover:bg-white text-slate-800 font-bold text-xs shadow-lg border border-slate-200 transition-all flex items-center space-x-1.5 cursor-pointer"
+          >
+            <MapIcon className="w-3.5 h-3.5 text-sky-600" />
+            <span>Tile Basemap</span>
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="relative w-full h-[580px] rounded-3xl overflow-hidden glass-card shadow-xl border border-white/80">
       
@@ -293,6 +327,12 @@ export const MapView: React.FC<MapViewProps> = ({
           <span className="text-[10px] font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
             {events.filter(e => e.source === 'api' || e.verificationStatus === 'verified' || e.isImdCorroborated).length} Corroborated
           </span>
+          {isOffline && (
+            <span className="text-[10px] font-extrabold text-rose-900 bg-rose-100 px-2 py-0.5 rounded-full border border-rose-300 flex items-center space-x-1">
+              <WifiOff className="w-3 h-3" />
+              <span>OFFLINE CACHE</span>
+            </span>
+          )}
           {events.filter(e => e.verificationStatus === 'unverified' && !e.isImdCorroborated && e.source !== 'api').length > 0 && (
             <button
               onClick={() => setShowUnverifiedOnMap(!showUnverifiedOnMap)}
@@ -346,6 +386,15 @@ export const MapView: React.FC<MapViewProps> = ({
           >
             <Flame className="w-3 h-3" />
             <span>Thermal IR</span>
+          </button>
+
+          <button
+            onClick={() => setUseTacticalMap(true)}
+            className="flex items-center space-x-1 px-2.5 py-1 rounded-xl font-bold transition-all text-amber-700 hover:text-amber-800 hover:bg-amber-50 border border-amber-200/60 cursor-pointer"
+            title="Zero-network tactical emergency vector map"
+          >
+            <ShieldAlert className="w-3 h-3 text-amber-600" />
+            <span>Tactical Radar</span>
           </button>
         </div>
       </div>

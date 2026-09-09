@@ -7,6 +7,7 @@ import { StatsOverview } from './components/StatsOverview';
 import { FilterBar } from './components/FilterBar';
 import { MapView } from './components/MapView';
 import { LiveFeedList } from './components/LiveFeedList';
+import { RightMapPanel } from './components/RightMapPanel';
 import { SimulationControls } from './components/SimulationControls';
 import { AnalyticsCharts } from './components/AnalyticsCharts';
 import { AdminPanel } from './components/AdminPanel';
@@ -19,15 +20,23 @@ import { WeatherAtmosphere } from './components/WeatherAtmosphere';
 import { WeatherAIChatbot } from './components/WeatherAIChatbot';
 import { HyperlocalWeatherBar } from './components/HyperlocalWeatherBar';
 import { MyReports } from './components/MyReports';
+import { OfflineEmergencyBanner } from './components/OfflineEmergencyBanner';
+import { PrepareOfflineModal } from './components/PrepareOfflineModal';
 
 import { WeatherEvent, FilterState, WeatherMood, EventCategory } from './types/weather';
 import { MOOD_THEMES } from './data/initialEvents';
 import { getStoredEvents, getAdminAuthState, addEventWithProcessing, batchAddEvents } from './services/storage';
+import { useConnectivity, connectivityManager } from './services/connectivityService';
+import { offlineStorage, OfflineSnapshot } from './services/offlineStorage';
+import { syncQueue } from './services/syncQueue';
+import { apiClient } from './services/apiClient';
+import { websocketClient } from './services/websocketClient';
 import {
   fetchLiveCityWeather,
   fetchAllIndianCitiesLiveWeather,
   reverseGeocodeCoords,
   fetchLiveCoordinatesWeather,
+  fetchWeatherBySearch,
   generateSimulatedTweet
 } from './services/weatherApi';
 import { MAJOR_INDIAN_CITIES, getRandomIndianCity } from './config/india';
@@ -54,10 +63,56 @@ export const App: React.FC = () => {
   const [isCitizenModalOpen, setIsCitizenModalOpen] = useState(false);
   const [isAdminLoginModalOpen, setIsAdminLoginModalOpen] = useState(false);
   const [isHelplinesModalOpen, setIsHelplinesModalOpen] = useState(false);
+  const [isPrepareModalOpen, setIsPrepareModalOpen] = useState(false);
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState<boolean>(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [activeHyperlocalEvent, setActiveHyperlocalEvent] = useState<WeatherEvent | null>(null);
   const [isInitialLoading, setIsInitialLoading] = useState<boolean>(true);
+
+  // Weather Search On-Demand State (Right of Map)
+  const [searchedWeather, setSearchedWeather] = useState<WeatherEvent | null>(null);
+  const [isSearchingWeather, setIsSearchingWeather] = useState<boolean>(false);
+  const [weatherSearchError, setWeatherSearchError] = useState<string | null>(null);
+  const [citizenModalPrefill, setCitizenModalPrefill] = useState<{ city: string; lat: number; lng: number } | null>(null);
+
+  // Disaster Offline Resilience State
+  const { status: connStatus, isOffline, isDegraded, checkReachability } = useConnectivity();
+  const [offlineSnapshot, setOfflineSnapshot] = useState<OfflineSnapshot | null>(null);
+  const [isEmergencyView, setIsEmergencyView] = useState<boolean>(false);
+  const [isLowBandwidth, setIsLowBandwidth] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('cloudnet_low_bandwidth') === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  const handleToggleLowBandwidth = () => {
+    setIsLowBandwidth(prev => {
+      const next = !prev;
+      try {
+        localStorage.setItem('cloudnet_low_bandwidth', next ? 'true' : 'false');
+      } catch {}
+      showToast(next ? '⚡ Low-Bandwidth Mode ON: Particle canvas & background polls paused' : 'Standard Bandwidth Mode restored');
+      return next;
+    });
+  };
+
+  // Load offline snapshot on mount and when offline status changes
+  useEffect(() => {
+    offlineStorage.getOfflineSnapshot().then(snap => setOfflineSnapshot(snap));
+  }, [isOffline]);
+
+  // Listen for background report upload completions
+  useEffect(() => {
+    const handleSynced = (e: any) => {
+      const count = e.detail?.count || 1;
+      showToast(`⚡ Connection Restored: ${count} citizen report${count > 1 ? 's' : ''} synchronized successfully!`);
+      setEvents(getStoredEvents());
+    };
+    window.addEventListener('cloudnet_reports_synced', handleSynced);
+    return () => window.removeEventListener('cloudnet_reports_synced', handleSynced);
+  }, []);
 
   // Track sidebar collapsed width for main content offset
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -88,6 +143,44 @@ export const App: React.FC = () => {
     setActiveMood('default');
   };
 
+  const handleSearchWeather = async (query: string) => {
+    if (!query || query.trim().length < 2) return;
+    setIsSearchingWeather(true);
+    setWeatherSearchError(null);
+
+    try {
+      showToast(`🔍 Fetching live weather observation for "${query}"...`);
+      const weather = await fetchWeatherBySearch(query);
+      if (weather) {
+        setSearchedWeather(weather);
+        setSelectedEvent(weather);
+        setActiveMood(weather.category);
+        
+        // Ingest into processed events repository so it renders on map
+        addEventWithProcessing(weather);
+        setEvents(getStoredEvents());
+        showToast(`✓ Weather loaded: ${weather.city} (${weather.telemetry?.temperatureC?.toFixed(1) ?? '--'}°C)`);
+      } else {
+        setWeatherSearchError(`No weather station found for "${query}". Try an Indian city name or 6-digit PIN code.`);
+        showToast(`Could not find weather for "${query}"`);
+      }
+    } catch (err: any) {
+      setWeatherSearchError(`Failed to fetch weather: ${err?.message || 'Network error'}`);
+    } finally {
+      setIsSearchingWeather(false);
+    }
+  };
+
+  const handleClearSearchedWeather = () => {
+    setSearchedWeather(null);
+    setWeatherSearchError(null);
+  };
+
+  const handleOpenReportModalWithLocation = (loc: { city: string; lat: number; lng: number }) => {
+    setCitizenModalPrefill(loc);
+    setIsCitizenModalOpen(true);
+  };
+
   const handleMapClickCoords = async (lat: number, lng: number) => {
     try {
       showToast(`📍 Analyzing microclimate coordinates [${lat.toFixed(3)}°, ${lng.toFixed(3)}°]...`);
@@ -108,6 +201,42 @@ export const App: React.FC = () => {
     setEvents(loaded);
     setIsAdminAuthenticated(getAdminAuthState());
 
+    // Connect to CloudNet WebSocket streaming service
+    websocketClient.connect();
+
+    const unsubWsEvent = websocketClient.onEvent((incoming) => {
+      setEvents((prev) => {
+        const exists = prev.some((e) => e.id === incoming.id);
+        const updated = exists ? prev.map((e) => (e.id === incoming.id ? incoming : e)) : [incoming, ...prev];
+        return updated;
+      });
+      showToast(`⚡ Real-Time Stream: New ${incoming.category} event verified in ${incoming.city}`);
+    });
+
+    const unsubWsOverride = websocketClient.onStatusOverride(({ eventId, newStatus, confidence, reason }) => {
+      setEvents((prev) =>
+        prev.map((e) => {
+          if (e.id === eventId) {
+            return {
+              ...e,
+              verificationStatus: newStatus.toLowerCase() as any,
+              confidenceScore: confidence,
+              flagReason: reason,
+            };
+          }
+          return e;
+        })
+      );
+      showToast(`🛡️ Officer Override: Event ${eventId.slice(0, 8)} updated to ${newStatus}`);
+    });
+
+    // Attempt backend initial sync
+    apiClient.getEvents({ limit: 100 }).then((backendEvents) => {
+      if (backendEvents && backendEvents.length > 0) {
+        setEvents(backendEvents);
+      }
+    }).catch(() => {});
+
     const handleCustomEvents = (e: any) => {
       if (e.detail) {
         setEvents(e.detail);
@@ -118,6 +247,12 @@ export const App: React.FC = () => {
 
     // Initial 100% Live Sync: Pull real-world telemetry from all Indian meteorological stations
     const syncAllLiveWeather = async (isInitial = false) => {
+      // If currently offline or in low bandwidth mode, avoid unnecessary network floods
+      if (connectivityManager.getEffectiveStatus() === 'offline' || isLowBandwidth) {
+        if (isInitial) setIsInitialLoading(false);
+        return;
+      }
+
       try {
         const liveCitiesData = await fetchAllIndianCitiesLiveWeather();
         if (liveCitiesData.length > 0) {
@@ -136,14 +271,16 @@ export const App: React.FC = () => {
     // Immediately trigger initial sync — clears loading state when done
     syncAllLiveWeather(true);
 
-    // Auto-poll live sensor telemetry every 45 seconds
+    // Auto-poll live sensor telemetry every 45 seconds (only when online and not in low-bandwidth mode)
     const interval = setInterval(() => syncAllLiveWeather(false), 45000);
 
     return () => {
       window.removeEventListener('cloudnet_events_updated', handleCustomEvents);
       clearInterval(interval);
+      unsubWsEvent();
+      unsubWsOverride();
     };
-  }, []);
+  }, [isLowBandwidth]);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -313,8 +450,8 @@ export const App: React.FC = () => {
         }}
       />
 
-      {/* Dynamic Animated Atmospheric Weather Canvas */}
-      <WeatherAtmosphere mood={activeMood} />
+      {/* Dynamic Animated Atmospheric Weather Canvas (Disabled in Low-Bandwidth Mode) */}
+      {!isLowBandwidth && <WeatherAtmosphere mood={activeMood} />}
 
 
       {/* ── Left Sidebar ─────────────────────────────────────── */}
@@ -322,11 +459,11 @@ export const App: React.FC = () => {
         activeTab={activeTab}
         setActiveTab={(tab) => {
           setActiveTab(tab);
-          // Track collapse state by listening to sidebar's internal toggle
         }}
         onOpenCitizenModal={() => setIsCitizenModalOpen(true)}
         onOpenAdminLoginModal={() => setIsAdminLoginModalOpen(true)}
         onOpenHelplinesModal={() => setIsHelplinesModalOpen(true)}
+        onOpenPrepareModal={() => setIsPrepareModalOpen(true)}
         isAdminAuthenticated={isAdminAuthenticated}
         setIsAdminAuthenticated={setIsAdminAuthenticated}
         activeMood={activeMood}
@@ -336,6 +473,20 @@ export const App: React.FC = () => {
 
       {/* ── Main Content (offset by sidebar width) ─────────────── */}
       <div className={`transition-all duration-250 ease-in-out ${mainMargin} min-h-screen flex flex-col`}>
+
+        {/* Offline Disaster Emergency Banner */}
+        <OfflineEmergencyBanner
+          status={connStatus}
+          snapshot={offlineSnapshot}
+          onOpenHelplinesModal={() => setIsHelplinesModalOpen(true)}
+          onOpenCitizenModal={() => setIsCitizenModalOpen(true)}
+          onOpenPrepareModal={() => setIsPrepareModalOpen(true)}
+          isEmergencyView={isEmergencyView}
+          onToggleEmergencyView={() => setIsEmergencyView((v) => !v)}
+          isLowBandwidth={isLowBandwidth}
+          onToggleLowBandwidth={handleToggleLowBandwidth}
+          onCheckReachability={() => checkReachability()}
+        />
 
         {/* Breaking Ticker — full width of content area */}
         <LiveTicker 
@@ -350,35 +501,67 @@ export const App: React.FC = () => {
         {/* Main Container */}
         <main className="flex-1 px-4 sm:px-6 lg:px-8 py-6 relative z-10">
           
-          {/* Quick Metro Glance Bar */}
-          <CityGlanceBar
-            events={events}
-            onSelectCity={handleFocusCity}
-            onMoodChange={(mood) => setActiveMood(mood)}
-          />
+          {/* Quick Metro Glance Bar (Hidden in Minimal Emergency View) */}
+          {!isEmergencyView && (
+            <CityGlanceBar
+              events={events}
+              onSelectCity={handleFocusCity}
+              onMoodChange={(mood) => setActiveMood(mood)}
+            />
+          )}
 
-          {/* Dynamic Weather Mood Bar */}
-          <WeatherMoodBar
-            activeMood={activeMood}
-            onSelectMood={(mood) => {
-              setActiveMood(mood);
-              if (mood !== 'default') {
-                setFilter(prev => ({
-                  ...prev,
-                  categories: [mood]
-                }));
-              } else {
-                setFilter(prev => ({
-                  ...prev,
-                  categories: []
-                }));
-              }
-            }}
-          />
+          {/* Dynamic Weather Mood Bar (Hidden in Minimal Emergency View) */}
+          {!isEmergencyView && (
+            <WeatherMoodBar
+              activeMood={activeMood}
+              onSelectMood={(mood) => {
+                setActiveMood(mood);
+                if (mood !== 'default') {
+                  setFilter(prev => ({
+                    ...prev,
+                    categories: [mood]
+                  }));
+                } else {
+                  setFilter(prev => ({
+                    ...prev,
+                    categories: []
+                  }));
+                }
+              }}
+            />
+          )}
 
           {/* View 1: Main Dashboard (Interactive Map + Live Feed) */}
           {activeTab === 'dashboard' && (
             <div className="space-y-6">
+
+              {/* Minimal Emergency Cockpit Header when Emergency View is active */}
+              {isEmergencyView && (
+                <div className="p-4 rounded-3xl bg-amber-500/15 border border-amber-300 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+                  <div>
+                    <h2 className="font-extrabold text-sm text-slate-900 flex items-center space-x-2">
+                      <span>🚨 Minimal Disaster Response View Active</span>
+                    </h2>
+                    <p className="text-slate-600 mt-0.5">
+                      Secondary analytics and test controls suspended to prioritize battery life and critical local disaster triage.
+                    </p>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <button
+                      onClick={() => setIsCitizenModalOpen(true)}
+                      className="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold shadow-xs cursor-pointer"
+                    >
+                      Report Incident
+                    </button>
+                    <button
+                      onClick={() => setIsHelplinesModalOpen(true)}
+                      className="px-3.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold shadow-xs cursor-pointer"
+                    >
+                      Emergency 112
+                    </button>
+                  </div>
+                </div>
+              )}
               
               {/* Hyperlocal Small Area & "My Area" Weather Bar */}
               <HyperlocalWeatherBar
@@ -389,21 +572,24 @@ export const App: React.FC = () => {
                 showToast={showToast}
               />
 
-              {/* KPI Stats Overview */}
-              <StatsOverview events={events} />
+              {/* KPI Stats Overview (Hidden in Minimal Emergency View) */}
+              {!isEmergencyView && <StatsOverview events={events} />}
 
-              {/* Testbed Live Ingestion Toolbar */}
-              <SimulationControls onNewEvent={handleNewEvent} />
+              {/* Testbed Live Ingestion Toolbar (Hidden in Minimal Emergency View) */}
+              {!isEmergencyView && <SimulationControls onNewEvent={handleNewEvent} />}
 
-              {/* Filter Bar with 7 Categories & Search */}
-              <FilterBar
-                filter={filter}
-                setFilter={setFilter}
-                totalMatches={filteredEvents.length}
-                onCategorySelected={(cat) => setActiveMood(cat)}
-              />
+              {/* Filter Bar with 7 Categories & Search (Hidden in Minimal Emergency View) */}
+              {!isEmergencyView && (
+                <FilterBar
+                  filter={filter}
+                  setFilter={setFilter}
+                  totalMatches={filteredEvents.length}
+                  onCategorySelected={(cat) => setActiveMood(cat)}
+                  onSearchWeather={handleSearchWeather}
+                />
+              )}
 
-              {/* Map & Live Feed Split View */}
+              {/* Map & Live Weather / Streaming Feed Split View */}
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
                 
                 {/* Interactive CartoDB Leaflet Map */}
@@ -419,14 +605,20 @@ export const App: React.FC = () => {
                   />
                 </div>
 
-                {/* Real-time Streaming Feed List */}
+                {/* Right of Map: Live Weather Search & Streaming Incident Feed */}
                 <div className="lg:col-span-4">
-                  <LiveFeedList
+                  <RightMapPanel
                     events={filteredEvents}
                     selectedEvent={selectedEvent}
+                    searchedWeather={searchedWeather}
+                    isSearching={isSearchingWeather}
+                    searchError={weatherSearchError}
+                    onSearch={handleSearchWeather}
                     onSelectEvent={handleSelectEvent}
                     onOpenDetails={(e) => setInspectedEvent(e)}
+                    onOpenReportModalWithLocation={handleOpenReportModalWithLocation}
                     onMoodChange={(mood) => setActiveMood(mood)}
+                    onClearSearchedWeather={handleClearSearchedWeather}
                   />
                 </div>
 
@@ -510,11 +702,15 @@ export const App: React.FC = () => {
       {/* Citizen Report Modal */}
       <CitizenReportModal
         isOpen={isCitizenModalOpen}
-        onClose={() => setIsCitizenModalOpen(false)}
+        onClose={() => {
+          setIsCitizenModalOpen(false);
+          setCitizenModalPrefill(null);
+        }}
         onReportSubmitted={(newEvent) => {
           handleNewEvent(newEvent, 'Citizen Report submitted and verified by AI.');
         }}
         onMoodChange={(mood) => setActiveMood(mood)}
+        prefilledLocation={citizenModalPrefill}
       />
 
       {/* Admin Login Modal */}
@@ -531,6 +727,16 @@ export const App: React.FC = () => {
       <EmergencyHelplineModal
         isOpen={isHelplinesModalOpen}
         onClose={() => setIsHelplinesModalOpen(false)}
+      />
+
+      {/* Prepare Offline Area Modal */}
+      <PrepareOfflineModal
+        isOpen={isPrepareModalOpen}
+        onClose={() => setIsPrepareModalOpen(false)}
+        onPrepared={(snap) => {
+          setOfflineSnapshot(snap);
+          showToast(`✓ Local emergency data cached for ${snap.location.city} (${snap.location.radiusKm} km radius)`);
+        }}
       />
 
       {/* Event Details Drawer Modal */}

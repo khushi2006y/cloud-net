@@ -11,10 +11,17 @@ import {
   Trash2,
   RefreshCw,
   AlertCircle,
+  WifiOff,
+  Send,
+  CheckCircle2,
+  AlertTriangle
 } from 'lucide-react';
 import { WeatherEvent } from '../types/weather';
 import { getUserReports, clearUserReports } from '../services/storage';
 import { CATEGORY_CONFIG } from '../data/initialEvents';
+import { offlineStorage, PendingReport } from '../services/offlineStorage';
+import { syncQueue } from '../services/syncQueue';
+import { useConnectivity } from '../services/connectivityService';
 
 interface MyReportsProps {
   onOpenCitizenModal: () => void;
@@ -64,16 +71,33 @@ function timeAgo(iso: string): string {
 
 export const MyReports: React.FC<MyReportsProps> = ({ onOpenCitizenModal, onInspectEvent }) => {
   const [reports, setReports] = useState<WeatherEvent[]>([]);
+  const [pendingReports, setPendingReports] = useState<PendingReport[]>([]);
+  const [isSyncing, setIsSyncing] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const { isOnline } = useConnectivity();
 
-  const reload = () => setReports(getUserReports());
+  const reload = () => {
+    setReports(getUserReports());
+    offlineStorage.getPendingReports().then((p) => setPendingReports(p));
+  };
 
   useEffect(() => {
     reload();
-    // Re-sync on storage changes (e.g. new submission from modal)
+
     const onStorage = () => reload();
+    const onPending = () => {
+      offlineStorage.getPendingReports().then((p) => setPendingReports(p));
+    };
+
     window.addEventListener('cloudnet_events_updated', onStorage);
-    return () => window.removeEventListener('cloudnet_events_updated', onStorage);
+    window.addEventListener('cloudnet_pending_reports_changed', onPending);
+    window.addEventListener('cloudnet_reports_synced', onStorage);
+
+    return () => {
+      window.removeEventListener('cloudnet_events_updated', onStorage);
+      window.removeEventListener('cloudnet_pending_reports_changed', onPending);
+      window.removeEventListener('cloudnet_reports_synced', onStorage);
+    };
   }, []);
 
   const handleClear = () => {
@@ -81,6 +105,21 @@ export const MyReports: React.FC<MyReportsProps> = ({ onOpenCitizenModal, onInsp
     setReports([]);
     setShowClearConfirm(false);
   };
+
+  const handleSyncPendingNow = async () => {
+    setIsSyncing(true);
+    await syncQueue.syncPendingReports();
+    reload();
+    setIsSyncing(false);
+  };
+
+  const handleDeletePending = async (id: string) => {
+    await offlineStorage.removePendingReport(id);
+    const updated = await offlineStorage.getPendingReports();
+    setPendingReports(updated);
+  };
+
+  const pendingUnsynced = pendingReports.filter((r) => r.syncStatus === 'pending' || r.syncStatus === 'failed');
 
   return (
     <div className="space-y-6">
@@ -147,6 +186,80 @@ export const MyReports: React.FC<MyReportsProps> = ({ onOpenCitizenModal, onInsp
             >
               Yes, Clear
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Offline Pending Upload Queue Card */}
+      {pendingReports.length > 0 && (
+        <div className="glass-card rounded-2xl p-5 border-amber-200 bg-amber-50/70 space-y-3 shadow-sm">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div className="flex items-center space-x-2">
+              <div className="p-2 rounded-xl bg-amber-200/80 text-amber-800">
+                <WifiOff className="w-4 h-4" />
+              </div>
+              <div>
+                <h3 className="font-bold text-sm text-slate-900 flex items-center space-x-2">
+                  <span>Offline Citizen Upload Queue</span>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-amber-200 text-amber-900">
+                    {pendingUnsynced.length} Pending Sync
+                  </span>
+                </h3>
+                <p className="text-xs text-slate-600">
+                  Incident reports stored locally in IndexedDB while device was offline.
+                </p>
+              </div>
+            </div>
+
+            {isOnline && pendingUnsynced.length > 0 && (
+              <button
+                onClick={handleSyncPendingNow}
+                disabled={isSyncing}
+                className="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-bold text-xs shadow-sm flex items-center space-x-1.5 transition-all cursor-pointer"
+              >
+                <Send className="w-3.5 h-3.5" />
+                <span>{isSyncing ? 'Synchronizing…' : 'Sync Queue Now'}</span>
+              </button>
+            )}
+          </div>
+
+          <div className="divide-y divide-amber-200/60 border border-amber-200/60 rounded-xl bg-white/80 overflow-hidden">
+            {pendingReports.map((pending) => (
+              <div key={pending.id} className="p-3 flex items-center justify-between text-xs">
+                <div className="space-y-0.5">
+                  <div className="font-bold text-slate-900 flex items-center space-x-1.5">
+                    <span>{pending.title}</span>
+                    <span className="text-[10px] font-mono text-slate-400">({pending.id})</span>
+                  </div>
+                  <p className="text-[11px] text-slate-600 line-clamp-1">{pending.description}</p>
+                  <div className="text-[10px] text-slate-400">
+                    {new Date(pending.timestamp).toLocaleString()} • {pending.city}, {pending.state}
+                  </div>
+                </div>
+
+                <div className="flex items-center space-x-2 flex-shrink-0">
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase ${
+                    pending.syncStatus === 'synced'
+                      ? 'bg-emerald-100 text-emerald-800'
+                      : pending.syncStatus === 'syncing'
+                      ? 'bg-sky-100 text-sky-800 animate-pulse'
+                      : pending.syncStatus === 'failed'
+                      ? 'bg-rose-100 text-rose-800'
+                      : 'bg-amber-100 text-amber-800'
+                  }`}>
+                    {pending.syncStatus === 'synced' ? '✓ Synced' : pending.syncStatus === 'syncing' ? 'Syncing…' : pending.syncStatus === 'failed' ? 'Failed' : 'Pending Reconnect'}
+                  </span>
+
+                  <button
+                    onClick={() => handleDeletePending(pending.id)}
+                    className="p-1 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-rose-600 transition-colors"
+                    title="Remove from queue"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       )}

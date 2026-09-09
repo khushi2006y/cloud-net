@@ -14,9 +14,13 @@ import {
   ChevronRight,
   ClipboardList,
   User,
+  Download,
+  Wifi,
+  WifiOff
 } from 'lucide-react';
 import { WeatherMood } from '../types/weather';
 import { setAdminAuthState } from '../services/storage';
+import { useConnectivity } from '../services/connectivityService';
 
 export type ActiveTab = 'dashboard' | 'analytics' | 'admin' | 'feeds' | 'myreports';
 
@@ -26,6 +30,7 @@ interface SidebarProps {
   onOpenCitizenModal: () => void;
   onOpenAdminLoginModal: () => void;
   onOpenHelplinesModal: () => void;
+  onOpenPrepareModal?: () => void;
   isAdminAuthenticated: boolean;
   setIsAdminAuthenticated: (authed: boolean) => void;
   activeMood: WeatherMood;
@@ -87,6 +92,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onOpenCitizenModal,
   onOpenAdminLoginModal,
   onOpenHelplinesModal,
+  onOpenPrepareModal,
   isAdminAuthenticated,
   setIsAdminAuthenticated,
   activeMood,
@@ -97,6 +103,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const [isMobile, setIsMobile] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const overlayRef = useRef<HTMLDivElement>(null);
+
+  const { status: connStatus, isOffline, isDegraded } = useConnectivity();
 
   // Detect small screen — auto-collapse on mobile
   useEffect(() => {
@@ -321,6 +329,25 @@ export const Sidebar: React.FC<SidebarProps> = ({
           )}
         </button>
 
+        {/* Offline Area Caching */}
+        {onOpenPrepareModal && (
+          <button
+            onClick={onOpenPrepareModal}
+            title={collapsed ? 'Cache Offline Area' : undefined}
+            className={`group relative w-full flex items-center rounded-xl text-sky-800 font-bold text-xs bg-sky-50 hover:bg-sky-100 border border-sky-200 transition-all cursor-pointer ${
+              collapsed ? 'justify-center px-0 py-2' : 'space-x-2 px-3 py-2'
+            }`}
+          >
+            <Download className="w-4 h-4 text-sky-600 shrink-0" />
+            {!collapsed && <span>Offline Area</span>}
+            {collapsed && (
+              <div className="pointer-events-none absolute left-full ml-2.5 px-2.5 py-1.5 rounded-lg bg-slate-900 text-white text-xs font-semibold whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity shadow-lg z-50">
+                Cache Offline Area
+              </div>
+            )}
+          </button>
+        )}
+
         {/* SOS Helplines */}
         <button
           onClick={onOpenHelplinesModal}
@@ -361,9 +388,29 @@ export const Sidebar: React.FC<SidebarProps> = ({
           )}
         </button>
 
+        {/* Persistent Connection Status Pill */}
+        {!collapsed ? (
+          <div className="flex items-center space-x-2 px-3 py-1.5 border-t border-slate-100/80">
+            <span className={`w-2 h-2 rounded-full ${
+              connStatus === 'online' ? 'bg-emerald-500 animate-pulse' : connStatus === 'degraded' ? 'bg-amber-500 animate-pulse' : 'bg-rose-500 animate-ping'
+            } shrink-0`} />
+            <span className={`text-[10px] font-bold uppercase tracking-wider ${
+              connStatus === 'online' ? 'text-emerald-700' : connStatus === 'degraded' ? 'text-amber-700' : 'text-rose-700'
+            }`}>
+              {connStatus === 'online' ? 'Online • IMD Grid' : connStatus === 'degraded' ? 'Degraded Network' : 'Offline Emergency'}
+            </span>
+          </div>
+        ) : (
+          <div className="flex justify-center py-1.5" title={connStatus.toUpperCase()}>
+            <span className={`w-2.5 h-2.5 rounded-full ${
+              connStatus === 'online' ? 'bg-emerald-500' : connStatus === 'degraded' ? 'bg-amber-500' : 'bg-rose-500 animate-ping'
+            }`} />
+          </div>
+        )}
+
         {/* Live events count */}
         {!collapsed && (
-          <div className="flex items-center space-x-2 px-3 py-1.5">
+          <div className="flex items-center space-x-2 px-3 py-1">
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
             <span className="text-[10px] text-slate-400 font-medium">{totalEventsCount} events live</span>
           </div>

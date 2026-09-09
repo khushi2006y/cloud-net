@@ -7,9 +7,17 @@ export type EventCategory =
   | 'dust storm'
   | 'strong wind';
 
-export type ReportSource = 'twitter' | 'api' | 'citizen';
+export type ReportSource = 'twitter' | 'api' | 'citizen' | 'imd' | 'iot' | 'social';
 
-export type VerificationStatus = 'verified' | 'unverified' | 'flagged' | 'duplicate';
+export type VerificationStatus = 
+  | 'verified' 
+  | 'unverified' 
+  | 'flagged' 
+  | 'duplicate'
+  | 'provisional'
+  | 'corroborated'
+  | 'contradicted'
+  | 'stale';
 
 export type SeverityLevel = 'low' | 'moderate' | 'severe' | 'extreme';
 
@@ -25,6 +33,30 @@ export interface MoodTheme {
   badgeText: string;
   description: string;
   headerSubtitle: string;
+}
+
+export interface EvidenceItem {
+  id?: string;
+  evidence_type: string;
+  weight: number;
+  direction: 'SUPPORTING' | 'CONTRADICTING' | 'NEUTRAL';
+  description: string;
+  source_id?: string;
+  source_name?: string;
+  data_payload?: Record<string, any>;
+  created_at?: string;
+}
+
+export interface AuditLogItem {
+  id?: string;
+  action: string;
+  performed_by?: string;
+  reason?: string;
+  old_status?: string;
+  new_status?: string;
+  old_confidence?: number;
+  new_confidence?: number;
+  timestamp: string;
 }
 
 export interface WeatherEvent {
@@ -75,15 +107,36 @@ export interface WeatherEvent {
   };
   flagReason?: string;
   mergedWithId?: string; // If marked as duplicate, points to primary event ID
+  duplicateOf?: string;
   duplicateCount?: number;
   
+  // National Backend Intelligence Extensions
+  evidence?: EvidenceItem[];
+  auditLogs?: AuditLogItem[];
+  timestamps?: {
+    eventTime?: string;
+    captureTime?: string;
+    uploadTime?: string;
+    isStale?: boolean;
+    freshnessGrade?: string;
+  };
+  processing?: {
+    duplicateOf?: string;
+    isSynthesizedCluster?: boolean;
+    independenceScore?: number;
+    diversityEntropy?: number;
+    subnetsObserved?: number;
+  };
+
   // Telemetry (from Open-Meteo API when available)
   telemetry?: {
     temperatureC?: number;
+    apparentTempC?: number;
     windSpeedKmh?: number;
     precipitationMm?: number;
     humidityPct?: number;
     pressureHpa?: number;
+    weatherCode?: number;
   };
 }
 

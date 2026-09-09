@@ -1,6 +1,7 @@
 import React from 'react';
-import { AlertTriangle, CloudRain, Zap, Flame, Wind, Bell } from 'lucide-react';
+import { AlertTriangle, CloudRain, Zap, Flame, Wind, Bell, WifiOff } from 'lucide-react';
 import { WeatherEvent } from '../types/weather';
+import { useConnectivity } from '../services/connectivityService';
 
 interface LiveTickerProps {
   events: WeatherEvent[];
@@ -8,6 +9,7 @@ interface LiveTickerProps {
 }
 
 export const LiveTicker: React.FC<LiveTickerProps> = ({ events, onSelectEvent }) => {
+  const { isOffline, isDegraded } = useConnectivity();
   const severeEvents = events.filter(
     e => (e.severity === 'severe' || e.severity === 'extreme') && e.verificationStatus !== 'flagged'
   ).slice(0, 8);
@@ -19,9 +21,22 @@ export const LiveTicker: React.FC<LiveTickerProps> = ({ events, onSelectEvent })
       <div className="w-full bg-white/80 backdrop-blur-xl border border-white/80 rounded-2xl px-4 py-2.5 overflow-hidden shadow-xs flex items-center">
         
         {/* Urgent Alert Pill */}
-        <div className="flex-shrink-0 flex items-center space-x-1.5 bg-rose-100 text-rose-800 border border-rose-200 px-2.5 py-0.5 rounded-lg text-xs font-bold tracking-wide mr-4 z-10 shadow-xs">
-          <span className="w-2 h-2 rounded-full bg-rose-600 animate-ping"></span>
-          <span>IMD ADVISORY</span>
+        <div className={`flex-shrink-0 flex items-center space-x-1.5 px-2.5 py-0.5 rounded-lg text-xs font-bold tracking-wide mr-4 z-10 shadow-xs border ${
+          isOffline 
+            ? 'bg-amber-100 text-amber-900 border-amber-300' 
+            : 'bg-rose-100 text-rose-800 border-rose-200'
+        }`}>
+          {isOffline ? (
+            <>
+              <WifiOff className="w-3.5 h-3.5 text-amber-700" />
+              <span>CACHED ADVISORY</span>
+            </>
+          ) : (
+            <>
+              <span className="w-2 h-2 rounded-full bg-rose-600 animate-ping"></span>
+              <span>IMD ADVISORY</span>
+            </>
+          )}
         </div>
 
         {/* Scrolling Event Ticker */}
@@ -36,6 +51,11 @@ export const LiveTicker: React.FC<LiveTickerProps> = ({ events, onSelectEvent })
                 <span className="font-bold text-slate-900 group-hover:text-sky-700">
                   {event.city}:
                 </span>
+                {isOffline && (
+                  <span className="text-[9px] font-bold text-amber-900 bg-amber-100/90 border border-amber-300 px-1 py-0.2 rounded uppercase">
+                    Cached
+                  </span>
+                )}
                 <span className="text-slate-600 group-hover:text-slate-900">
                   {event.title}
                 </span>
