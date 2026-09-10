@@ -22,6 +22,7 @@ async def get_verification_queue(
     status_filter: Optional[str] = Query("PROVISIONAL", description="Queue status filter (PROVISIONAL, UNVERIFIED, FLAGGED, ALL)"),
     severity_filter: Optional[str] = Query(None),
     limit: int = Query(50, ge=1, le=200),
+    current_user: User = Depends(require_roles(["ADMIN", "OPERATOR"])),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -46,7 +47,7 @@ async def get_verification_queue(
 async def override_event_status(
     event_id: str,
     override_req: EventOverrideRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_roles(["ADMIN"])),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -109,7 +110,7 @@ async def override_event_status(
 async def quick_verify_event(
     event_id: str,
     reason: str = Query("Corroborated by field observer", min_length=3),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_roles(["ADMIN"])),
     db: AsyncSession = Depends(get_db)
 ):
     return await override_event_status(
@@ -124,7 +125,7 @@ async def quick_verify_event(
 async def quick_flag_event(
     event_id: str,
     reason: str = Query("Identified as fabricated or out-of-area hoax", min_length=3),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_roles(["ADMIN"])),
     db: AsyncSession = Depends(get_db)
 ):
     return await override_event_status(
@@ -138,6 +139,7 @@ async def quick_flag_event(
 @router.get("/audit-logs", response_model=List[VerificationLogOut])
 async def get_system_audit_logs(
     limit: int = Query(100, ge=1, le=500),
+    current_user: User = Depends(require_roles(["ADMIN", "OPERATOR"])),
     db: AsyncSession = Depends(get_db)
 ):
     """Returns the immutable append-only audit trail of all verification decisions."""

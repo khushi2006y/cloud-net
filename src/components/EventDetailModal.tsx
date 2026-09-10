@@ -225,11 +225,27 @@ export const EventDetailModal: React.FC<EventDetailModalProps> = ({
                 <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full border ${statusColor}`}>
                   {event.verificationStatus}
                 </span>
+                <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-slate-800 text-white shadow-xs">
+                  {event.source === 'sachet' ? 'SACHET (NDMA)' :
+                   event.source === 'incois' ? 'INCOIS Marine' :
+                   event.source === 'skymet' ? 'Skymet Weather' :
+                   event.source === 'imd' ? 'IMD Official' :
+                   event.source === 'api' ? 'Open-Meteo' :
+                   event.source === 'citizen' ? 'Citizen' :
+                   event.sourceAuthor || event.source}
+                </span>
               </div>
 
-              <h3 className="text-base font-bold text-slate-900 mt-0.5">
-                {event.city}, {event.state}
-              </h3>
+              <div className="flex items-center space-x-2 mt-0.5">
+                <h3 className="text-base font-bold text-slate-900">
+                  {event.city}, {event.state}
+                </h3>
+                {event.effective_until && (
+                  <span className="text-[10px] font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200">
+                    Expires: {new Date(event.effective_until).toLocaleDateString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                )}
+              </div>
             </div>
           </div>
 
@@ -326,8 +342,153 @@ export const EventDetailModal: React.FC<EventDetailModalProps> = ({
 
           {/* ==================== TAB 1: EVIDENCE BREAKDOWN ==================== */}
           {activeTab === 'evidence' && (
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
+            <div className="space-y-4">
+              {/* 6-Parameter Multi-Factor Mathematical Confidence Formula Card */}
+              {(() => {
+                const cb = event.confidenceBreakdown || {
+                  sourceScore: event.credibilityScore || (
+                    event.source === 'sachet' ? 98 :
+                    event.source === 'incois' ? 96 :
+                    event.source === 'imd' ? 98 :
+                    event.source === 'api' ? 96 :
+                    event.source === 'skymet' ? 88 :
+                    event.source === 'twitter' || event.source === 'social' ? 65 : 72
+                  ),
+                  sourceWeight: 0.25,
+                  temporalScore: event.timestamps?.isStale ? 25 : 90,
+                  temporalWeight: 0.20,
+                  geoScore: (event.latitude >= 5.0 && event.latitude <= 38.0 && event.longitude >= 67.0 && event.longitude <= 99.0) ? 100 : 10,
+                  geoWeight: 0.20,
+                  corroborationScore: event.verificationStatus === 'verified' || event.verificationStatus === 'corroborated' ? 90 : 50,
+                  corroborationWeight: 0.15,
+                  telemetryScore: event.telemetry?.precipitationMm !== undefined ? (event.telemetry.precipitationMm > 0 ? 95 : 10) : 50,
+                  telemetryWeight: 0.10,
+                  contentScore: event.confidenceScore || 75,
+                  contentWeight: 0.10,
+                  baseConfidence: Math.round(
+                    ((event.credibilityScore || 70) * 0.25) +
+                    ((event.timestamps?.isStale ? 25 : 90) * 0.20) +
+                    (100 * 0.20) +
+                    (75 * 0.15) +
+                    (50 * 0.10) +
+                    ((event.confidenceScore || 75) * 0.10)
+                  ),
+                  penalties: event.isContradictory ? [{ code: 'SEMANTIC_CONTRADICTION', reason: 'Direct semantic contradiction between claimed category and text body', points: 60 }] : [],
+                  totalPenalties: event.isContradictory ? 60 : 0,
+                  finalConfidence: event.confidenceScore
+                };
+
+                const factors = [
+                  { label: 'Source Trust & Reliability', weight: '25%', score: cb.sourceScore, points: (cb.sourceScore * cb.sourceWeight).toFixed(1), icon: '🛡️' },
+                  { label: '3-Tier Temporal Freshness', weight: '20%', score: cb.temporalScore, points: (cb.temporalScore * cb.temporalWeight).toFixed(1), icon: '⏱️' },
+                  { label: 'Geographic Boundary Validity', weight: '20%', score: cb.geoScore, points: (cb.geoScore * cb.geoWeight).toFixed(1), icon: '📍' },
+                  { label: 'Independent Corroboration', weight: '15%', score: cb.corroborationScore, points: (cb.corroborationScore * cb.corroborationWeight).toFixed(1), icon: '🌐' },
+                  { label: 'Open-Meteo Telemetry Agreement', weight: '10%', score: cb.telemetryScore, points: (cb.telemetryScore * cb.telemetryWeight).toFixed(1), icon: '📡' },
+                  { label: 'Content Lexicon & NLP Density', weight: '10%', score: cb.contentScore, points: (cb.contentScore * cb.contentWeight).toFixed(1), icon: '💬' },
+                ];
+
+                return (
+                  <div className="p-4 rounded-2xl bg-gradient-to-br from-slate-900 to-slate-800 text-white shadow-md space-y-3">
+                    <div className="flex items-center justify-between border-b border-slate-700/80 pb-2.5">
+                      <div className="flex items-center space-x-2">
+                        <span className="p-1.5 rounded-lg bg-sky-500/20 text-sky-400 font-mono text-xs font-bold">Σ</span>
+                        <div>
+                          <h5 className="font-extrabold text-xs tracking-tight">6-Parameter Multi-Factor Confidence Equation</h5>
+                          <p className="text-[10px] text-slate-400 font-mono">Final = Σ(Weight × Score) - Penalties</p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-[10px] uppercase tracking-wider text-sky-400 font-bold block">Composite Score</span>
+                        <span className="text-sm font-black font-mono text-white">{cb.finalConfidence}%</span>
+                      </div>
+                    </div>
+
+                    {/* 6 Factors Grid */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                      {factors.map((f, i) => (
+                        <div key={i} className="p-2.5 rounded-xl bg-slate-800/80 border border-slate-700/60 space-y-1">
+                          <div className="flex items-center justify-between text-[11px]">
+                            <span className="font-medium text-slate-300 flex items-center space-x-1">
+                              <span>{f.icon}</span>
+                              <span className="truncate max-w-[150px]">{f.label}</span>
+                            </span>
+                            <span className="font-mono text-sky-400 font-bold">+{f.points} pts</span>
+                          </div>
+                          <div className="flex items-center justify-between text-[10px] text-slate-400 font-mono">
+                            <span>Weight: {f.weight}</span>
+                            <span>Score: {f.score}/100</span>
+                          </div>
+                          <div className="w-full bg-slate-700/50 h-1.5 rounded-full overflow-hidden">
+                            <div 
+                              className="h-full bg-gradient-to-r from-sky-500 to-indigo-500 rounded-full" 
+                              style={{ width: `${Math.min(100, f.score)}%` }} 
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Base Score vs Penalty Ledger */}
+                    <div className="pt-2 border-t border-slate-700/80 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-[11px]">
+                      <div className="flex items-center space-x-2 font-mono">
+                        <span className="text-slate-400">Base Score:</span>
+                        <span className="font-bold text-slate-200">{cb.baseConfidence} pts</span>
+                        {cb.totalPenalties > 0 && (
+                          <>
+                            <span className="text-rose-400">- {cb.totalPenalties} penalties</span>
+                            <span className="text-slate-400">=</span>
+                            <span className="font-extrabold text-emerald-400">{cb.finalConfidence}%</span>
+                          </>
+                        )}
+                      </div>
+
+                      {cb.penalties.length > 0 && (
+                        <span className="text-[10px] font-bold text-rose-300 bg-rose-950/80 border border-rose-800/80 px-2 py-0.5 rounded-md flex items-center space-x-1">
+                          <AlertTriangle className="w-3 h-3 text-rose-400" />
+                          <span>{cb.penalties.length} Red-Flag Deduction{cb.penalties.length === 1 ? '' : 's'}</span>
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Active Penalties List */}
+                    {cb.penalties.length > 0 && (
+                      <div className="space-y-1.5 pt-1">
+                        {cb.penalties.map((p, idx) => (
+                          <div key={idx} className="p-2 rounded-xl bg-rose-950/40 border border-rose-800/50 flex items-center justify-between text-[11px]">
+                            <div className="flex items-center space-x-1.5 text-rose-200">
+                              <span className="font-mono text-[9px] font-extrabold bg-rose-900 px-1.5 py-0.2 rounded uppercase">{p.code}</span>
+                              <span className="text-[10px] text-slate-300">{p.reason}</span>
+                            </div>
+                            <span className="font-mono font-black text-rose-400 shrink-0">-{p.points} pts</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* 3-Tier Timestamps & EXIF Information Strip */}
+                    <div className="pt-2 border-t border-slate-700/60 grid grid-cols-1 sm:grid-cols-2 gap-2 text-[10px] font-mono text-slate-400">
+                      <div className="flex items-center space-x-1.5 bg-slate-800/60 p-2 rounded-xl border border-slate-700/50">
+                        <Clock className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                        <div>
+                          <div className="font-bold text-slate-300">3-Tier Time Model:</div>
+                          <div>Event: {event.timestamps?.eventTime ? new Date(event.timestamps.eventTime).toLocaleTimeString() : new Date(event.timestamp).toLocaleTimeString()} • Upload: {new Date(event.timestamp).toLocaleTimeString()}</div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center space-x-1.5 bg-slate-800/60 p-2 rounded-xl border border-slate-700/50">
+                        <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                        <div>
+                          <div className="font-bold text-slate-300">Photo Hardware EXIF:</div>
+                          <div>{event.exifMetadata?.cameraModel || 'Web/Mobile Client GPS'} {event.exifMetadata?.isHardwareGpsMatch === false ? '(GPS Conflict)' : '(Local Match)'}</div>
+                        </div>
+                      </div>
+                    </div>
+
+                  </div>
+                );
+              })()}
+
+              <div className="flex items-center justify-between pt-2">
                 <span className="text-xs font-bold text-slate-900 flex items-center space-x-1.5">
                   <Sparkles className="w-3.5 h-3.5 text-sky-600" />
                   <span>Evidence Fusion Engine — Forensic Line Items</span>

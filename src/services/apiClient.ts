@@ -67,6 +67,8 @@ export const apiClient = {
     state?: string;
     city?: string;
     search?: string;
+    source_type?: string;
+    source_id?: string;
     limit?: number;
   }): Promise<WeatherEvent[]> {
     try {
@@ -77,6 +79,8 @@ export const apiClient = {
       if (filters?.state && filters.state !== 'All States') params.append('state', filters.state);
       if (filters?.city) params.append('city', filters.city);
       if (filters?.search) params.append('search', filters.search);
+      if (filters?.source_type) params.append('source_type', filters.source_type);
+      if (filters?.source_id) params.append('source_id', filters.source_id);
       params.append('limit', String(filters?.limit || 100));
 
       const res = await fetch(`${API_BASE}/events?${params.toString()}`, {
@@ -235,6 +239,47 @@ export const apiClient = {
     return await res.json();
   },
 
+  // 10. Fetch Registered Ingestion Sources & Operational Health
+  async getSources(): Promise<any[]> {
+    try {
+      const res = await fetch(`${API_BASE}/sources`, {
+        headers: this.getHeaders(),
+      });
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch (e) {
+      console.warn('[CloudNet API] Could not fetch sources:', e);
+    }
+    return [];
+  },
+
+  async getSourcesHealth(): Promise<any[]> {
+    try {
+      const res = await fetch(`${API_BASE}/sources/health`, {
+        headers: this.getHeaders(),
+      });
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch (e) {
+      console.warn('[CloudNet API] Could not fetch source health telemetry:', e);
+    }
+    return [];
+  },
+
+  async syncSource(sourceId: string): Promise<any> {
+    const res = await fetch(`${API_BASE}/sources/${sourceId}/sync`, {
+      method: 'POST',
+      headers: this.getHeaders(),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || `Source sync failed for ${sourceId}`);
+    }
+    return await res.json();
+  },
+
   // Internal mapper
   _mapBackendToClient(b: any): WeatherEvent {
     const rawStatus = (b.status || b.verification?.status || b.verificationStatus || 'unverified').toLowerCase();
@@ -250,9 +295,32 @@ export const apiClient = {
       'HIDE_UNVERIFIED'
     );
 
+    let sourceKey: any = 'citizen';
+    const sType = b.source?.type || b.source_type || '';
+    const sId = b.source?.id || b.source_id || '';
+    if (sId.includes('sachet') || sType === 'OFFICIAL_GOVERNMENT_ALERT') {
+      sourceKey = 'sachet';
+    } else if (sId.includes('incois') || sType === 'OFFICIAL_GOVERNMENT_MARINE') {
+      sourceKey = 'incois';
+    } else if (sId.includes('skymet') || sType === 'WEATHER_PROVIDER') {
+      sourceKey = 'skymet';
+    } else if (sId.includes('imd') || sType === 'IMD') {
+      sourceKey = 'imd';
+    } else if (sId.includes('open-meteo') || sType === 'WEATHER_API') {
+      sourceKey = 'api';
+    } else if (sType.toLowerCase() === 'social') {
+      sourceKey = 'social';
+    } else {
+      sourceKey = 'citizen';
+    }
+
     return {
       id: b.id,
-      source: b.source?.type?.toLowerCase() || 'citizen',
+      source: sourceKey,
+      source_id: sId,
+      source_type: sType,
+      source_url: b.source_url,
+      effective_until: b.effective_until,
       sourceAuthor: b.source?.name || 'Anonymous Reporter',
       timestamp: b.timestamps?.uploadTime || new Date().toISOString(),
       city: b.location?.city || b.city || 'India',

@@ -8,7 +8,33 @@ export type EventCategory =
   | 'dust storm'
   | 'strong wind';
 
-export type ReportSource = 'twitter' | 'api' | 'citizen' | 'imd' | 'iot' | 'social';
+export type ReportSource = 
+  | 'twitter' 
+  | 'api' 
+  | 'citizen' 
+  | 'imd' 
+  | 'iot' 
+  | 'social' 
+  | 'sachet' 
+  | 'incois' 
+  | 'skymet'
+  | 'OFFICIAL_GOVERNMENT_ALERT'
+  | 'OFFICIAL_GOVERNMENT_MARINE'
+  | 'WEATHER_PROVIDER'
+  | 'WEATHER_API';
+
+export interface SourceHealthItem {
+  source_id: string;
+  source_name: string;
+  source_type: string;
+  operational_status: 'ONLINE' | 'DEGRADED' | 'UNAVAILABLE' | 'STALE';
+  status_reason?: string;
+  reliability_score: number;
+  last_successful_ingestion?: string;
+  records_processed: number;
+  processing_errors: number;
+  is_active: boolean;
+}
 
 export type VerificationStatus = 
   | 'verified' 
@@ -69,12 +95,50 @@ export interface AuditLogItem {
   timestamp: string;
 }
 
+export interface PenaltyItem {
+  code: string;
+  reason: string;
+  points: number;
+}
+
+export interface ConfidenceBreakdown {
+  sourceScore: number;
+  sourceWeight: number;
+  temporalScore: number;
+  temporalWeight: number;
+  geoScore: number;
+  geoWeight: number;
+  corroborationScore: number;
+  corroborationWeight: number;
+  telemetryScore: number;
+  telemetryWeight: number;
+  contentScore: number;
+  contentWeight: number;
+  baseConfidence: number;
+  penalties: PenaltyItem[];
+  totalPenalties: number;
+  finalConfidence: number;
+}
+
+export interface ExifMetadata {
+  gpsLatitude?: number;
+  gpsLongitude?: number;
+  captureTimestamp?: string;
+  cameraModel?: string;
+  isHardwareGpsMatch?: boolean;
+  isStaleMedia?: boolean;
+}
+
 export interface WeatherEvent {
   id: string;
   source: ReportSource;
+  source_id?: string;
+  source_type?: string;
   sourceAuthor: string;
   sourceHandle?: string;
   isOfficialSource?: boolean;
+  source_url?: string;
+  effective_until?: string;
   
   // Temporal & Spatial Metadata
   timestamp: string; // ISO 8601 string
@@ -166,6 +230,10 @@ export interface WeatherEvent {
   duplicate_count?: number;
   is_simulated?: boolean;
   isSimulated?: boolean;
+
+  // 6-Parameter Confidence Breakdown & EXIF Forensics
+  confidenceBreakdown?: ConfidenceBreakdown;
+  exifMetadata?: ExifMetadata;
 }
 
 export type SourceTrustLevel = 'official' | 'trusted_media' | 'verified_citizen' | 'unverified' | 'suspicious';
@@ -221,4 +289,6 @@ export interface ProcessingRuleResult {
   displayPolicy?: DisplayPolicy;
   supportingEvidence?: string[];
   contradictingEvidence?: string[];
+  confidenceBreakdown?: ConfidenceBreakdown;
+  exifMetadata?: ExifMetadata;
 }

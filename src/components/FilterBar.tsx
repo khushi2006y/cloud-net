@@ -252,21 +252,25 @@ export const FilterBar: React.FC<FilterBarProps> = ({
             <ShieldCheck className="w-3.5 h-3.5 mr-1 text-slate-500" /> Status:
           </span>
 
-          {(['verified', 'unverified', 'flagged', 'duplicate'] as VerificationStatus[]).map(status => {
+          {(['verified', 'corroborated', 'provisional', 'unverified', 'stale', 'contradicted'] as VerificationStatus[]).map(status => {
             const isSelected = filter.verificationStatuses.includes(status);
             return (
               <button
                 key={status}
                 onClick={() => handleStatusToggle(status)}
-                className={`px-2.5 py-1 rounded-lg text-xs font-semibold capitalize transition-all cursor-pointer ${
+                className={`px-2 py-0.5 rounded-lg text-xs font-semibold capitalize transition-all cursor-pointer ${
                   isSelected
                     ? status === 'verified'
                       ? 'bg-emerald-600 text-white shadow-xs'
-                      : status === 'flagged'
-                      ? 'bg-rose-600 text-white shadow-xs'
-                      : status === 'duplicate'
-                      ? 'bg-purple-600 text-white shadow-xs'
-                      : 'bg-amber-500 text-white shadow-xs'
+                      : status === 'corroborated'
+                      ? 'bg-teal-600 text-white shadow-xs'
+                      : status === 'provisional'
+                      ? 'bg-amber-500 text-white shadow-xs'
+                      : status === 'stale'
+                      ? 'bg-slate-600 text-white shadow-xs'
+                      : status === 'contradicted'
+                      ? 'bg-rose-700 text-white shadow-xs'
+                      : 'bg-rose-600 text-white shadow-xs'
                     : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
                 }`}
               >
@@ -281,36 +285,78 @@ export const FilterBar: React.FC<FilterBarProps> = ({
           <span className="text-slate-500 font-semibold mr-1">Source:</span>
 
           <button
-            onClick={() => handleSourceToggle('twitter')}
-            className={`flex items-center space-x-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
-              filter.sources.includes('twitter')
-                ? 'bg-sky-600 text-white'
-                : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+            onClick={() => handleSourceToggle('sachet')}
+            className={`flex items-center space-x-1 px-2 py-0.5 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
+              filter.sources.includes('sachet')
+                ? 'bg-red-700 text-white font-semibold'
+                : 'bg-white text-slate-700 border border-red-200 hover:bg-red-50'
             }`}
+            title="SACHET — NDMA National Disaster Alert Portal"
           >
-            <Twitter className="w-3 h-3" />
-            <span>Twitter #IMD</span>
+            <span className="w-2 h-2 rounded-full bg-red-500 mr-0.5"></span>
+            <span>SACHET (NDMA)</span>
+          </button>
+
+          <button
+            onClick={() => handleSourceToggle('incois')}
+            className={`flex items-center space-x-1 px-2 py-0.5 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
+              filter.sources.includes('incois')
+                ? 'bg-cyan-800 text-white font-semibold'
+                : 'bg-white text-slate-700 border border-cyan-200 hover:bg-cyan-50'
+            }`}
+            title="INCOIS — Indian National Centre for Ocean Information Services"
+          >
+            <span className="w-2 h-2 rounded-full bg-cyan-500 mr-0.5"></span>
+            <span>INCOIS Marine</span>
+          </button>
+
+          <button
+            onClick={() => handleSourceToggle('imd')}
+            className={`flex items-center space-x-1 px-2 py-0.5 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
+              filter.sources.includes('imd')
+                ? 'bg-blue-700 text-white font-semibold'
+                : 'bg-white text-slate-700 border border-blue-200 hover:bg-blue-50'
+            }`}
+            title="India Meteorological Department"
+          >
+            <span className="w-2 h-2 rounded-full bg-blue-500 mr-0.5"></span>
+            <span>IMD Official</span>
+          </button>
+
+          <button
+            onClick={() => handleSourceToggle('skymet')}
+            className={`flex items-center space-x-1 px-2 py-0.5 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
+              filter.sources.includes('skymet')
+                ? 'bg-amber-600 text-white font-semibold'
+                : 'bg-white text-slate-700 border border-amber-200 hover:bg-amber-50'
+            }`}
+            title="Skymet Weather Private Network"
+          >
+            <span className="w-2 h-2 rounded-full bg-amber-500 mr-0.5"></span>
+            <span>Skymet</span>
           </button>
 
           <button
             onClick={() => handleSourceToggle('api')}
-            className={`flex items-center space-x-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
+            className={`flex items-center space-x-1 px-2 py-0.5 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
               filter.sources.includes('api')
-                ? 'bg-teal-600 text-white'
+                ? 'bg-teal-700 text-white font-semibold'
                 : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
             }`}
+            title="Open-Meteo Synoptic IoT Station Network"
           >
             <Radio className="w-3 h-3" />
-            <span>Weather API</span>
+            <span>Open-Meteo</span>
           </button>
 
           <button
             onClick={() => handleSourceToggle('citizen')}
-            className={`flex items-center space-x-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
+            className={`flex items-center space-x-1 px-2 py-0.5 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
               filter.sources.includes('citizen')
-                ? 'bg-purple-600 text-white'
+                ? 'bg-purple-700 text-white font-semibold'
                 : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
             }`}
+            title="Citizen Crowdsourced Field Reports"
           >
             <Users className="w-3 h-3" />
             <span>Citizen Reports</span>

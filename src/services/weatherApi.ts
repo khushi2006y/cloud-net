@@ -207,10 +207,10 @@ export interface ImdCrossCheckResult {
 }
 
 /**
- * Cross-validates a weather report against real-time Open-Meteo / IMD synoptic API telemetry.
- * Only reports that match the current IMD observation are verified for direct map display.
+ * Cross-validates a weather report against real-time Open-Meteo Synoptic API telemetry (WMO Station Network).
+ * Only reports that match the physical atmospheric observation are verified for direct map display.
  */
-export async function crossValidateWithImdApi(
+export async function crossValidateWithSynopticTelemetry(
   lat: number,
   lng: number,
   category: EventCategory
@@ -222,7 +222,7 @@ export async function crossValidateWithImdApi(
     const data = await res.json();
     const curr = data.current;
 
-    const { category: detectedImdCategory } = mapWmoToCategory(
+    const { category: detectedStationCategory } = mapWmoToCategory(
       curr.weather_code,
       curr.temperature_2m,
       curr.wind_speed_10m,
@@ -241,50 +241,53 @@ export async function crossValidateWithImdApi(
     let explanation = '';
 
     // Precise Category Matching Rules:
-    if (category === detectedImdCategory) {
+    if (category === detectedStationCategory) {
       isMatched = true;
-      explanation = `Live IMD Match: Station confirms ${category} (Temp: ${curr.temperature_2m}°C, Rain: ${curr.precipitation}mm).`;
+      explanation = `Synoptic Station Match: Regional surface sensors confirm ${category} (Temp: ${curr.temperature_2m}°C, Rain: ${curr.precipitation}mm).`;
     } else if (
       (category === 'rainfall' || category === 'thunderstorm' || category === 'flooding') &&
       (curr.precipitation > 0 || curr.rain > 0 || [51, 53, 55, 61, 63, 65, 80, 81, 82, 95, 96, 99].includes(curr.weather_code))
     ) {
       isMatched = true;
-      explanation = `Precipitation Corroborated: IMD sensor detects active rain (${curr.precipitation}mm, WMO code ${curr.weather_code}).`;
+      explanation = `Precipitation Corroborated: Regional rain gauge detects active precipitation (${curr.precipitation}mm, WMO code ${curr.weather_code}).`;
     } else if (category === 'heatwave' && curr.temperature_2m >= 38) {
       isMatched = true;
-      explanation = `Heatwave Corroborated: IMD thermometer reads ${curr.temperature_2m}°C (severe thermal anomaly).`;
+      explanation = `Heatwave Corroborated: Station thermometer reads ${curr.temperature_2m}°C (severe thermal anomaly).`;
     } else if (category === 'strong wind' && curr.wind_speed_10m >= 30) {
       isMatched = true;
-      explanation = `Wind Velocity Corroborated: IMD anemometer records ${curr.wind_speed_10m} km/h.`;
+      explanation = `Wind Velocity Corroborated: Station anemometer records ${curr.wind_speed_10m} km/h.`;
     } else if (category === 'fog' && (curr.relative_humidity_2m >= 80 || [45, 48].includes(curr.weather_code))) {
       isMatched = true;
-      explanation = `Fog Corroborated: IMD atmospheric humidity at ${curr.relative_humidity_2m}%.`;
+      explanation = `Fog Corroborated: Atmospheric hygrometer records ${curr.relative_humidity_2m}% humidity.`;
     } else if (category === 'dust storm' && curr.temperature_2m >= 35 && curr.wind_speed_10m >= 22) {
       isMatched = true;
       explanation = `Dust Activity Corroborated: Arid winds at ${curr.wind_speed_10m} km/h with temp ${curr.temperature_2m}°C.`;
-    } else if (category === 'clear' && detectedImdCategory === 'clear') {
+    } else if (category === 'clear' && detectedStationCategory === 'clear') {
       isMatched = true;
-      explanation = `Fair Sky Corroborated: IMD station observes normal clear conditions (Temp: ${curr.temperature_2m}°C, Rain: 0mm).`;
+      explanation = `Fair Sky Corroborated: Station registers normal fair conditions (Temp: ${curr.temperature_2m}°C, Rain: 0mm).`;
     } else {
       isMatched = false;
-      explanation = `IMD Cross-Check Divergence: Live IMD station observes ${detectedImdCategory} (Temp: ${curr.temperature_2m}°C, Rain: ${curr.precipitation}mm) instead of reported ${category}.`;
+      explanation = `Synoptic Telemetry Divergence: Regional station observes ${detectedStationCategory} (Temp: ${curr.temperature_2m}°C, Rain: ${curr.precipitation}mm) instead of reported ${category}.`;
     }
 
     return {
       isMatchedWithImd: isMatched,
-      imdCategory: detectedImdCategory,
+      imdCategory: detectedStationCategory,
       telemetry,
       explanation
     };
   } catch (err) {
-    console.warn('IMD API cross-check error, falling back to heuristic verification:', err);
+    console.warn('Synoptic telemetry check delayed, routing to provisional queue:', err);
     return {
       isMatchedWithImd: false,
       imdCategory: category,
-      explanation: 'IMD Station network response delayed. Event routed to manual Officer Verification Queue.'
+      explanation: 'Synoptic station network response delayed. Event routed to manual Officer Verification Queue.'
     };
   }
 }
+
+// Backward-compatibility alias
+export const crossValidateWithImdApi = crossValidateWithSynopticTelemetry;
 
 /**
  * Ingests live meteorological social updates or bulletins from Twitter / IMD feed

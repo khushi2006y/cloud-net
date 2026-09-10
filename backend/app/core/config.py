@@ -46,19 +46,28 @@ class Settings(BaseSettings):
     WEIGHT_TELEMETRY_AGREEMENT: float = 0.10
     WEIGHT_CONTENT_CONSISTENCY: float = 0.10
     
-    # CORS Origins
+    # CORS Origins (CERT-In & OWASP Hardened — zero wildcard allowance)
     BACKEND_CORS_ORIGINS: List[str] = [
         "http://localhost:5173",
         "http://127.0.0.1:5173",
         "http://localhost:3000",
         "http://127.0.0.1:3000",
-        "http://localhost:8000",
-        "*"
+        "http://localhost:8000"
     ]
 
     # Twitter / X Social Stream Integration
     TWITTER_BEARER_TOKEN: str = os.getenv("TWITTER_BEARER_TOKEN", "")
     TWITTER_API_ENDPOINT: str = os.getenv("TWITTER_API_ENDPOINT", "https://api.twitter.com/2/tweets/search/recent")
+
+    # Skymet Weather Private Meteorological Integration
+    SKYMET_API_KEY: str = os.getenv("SKYMET_API_KEY", "")
+    SKYMET_BASE_URL: str = os.getenv("SKYMET_BASE_URL", "https://api.skymetweather.com/v1")
+
+    # SACHET — National Disaster Alert Portal (NDMA)
+    SACHET_FEED_URL: str = os.getenv("SACHET_FEED_URL", "https://sachet.ndma.gov.in/rss/alerts.xml")
+
+    # INCOIS — Ocean & Coastal Hazard Information
+    INCOIS_BASE_URL: str = os.getenv("INCOIS_BASE_URL", "https://incois.gov.in/tsunami")
 
     class Config:
         case_sensitive = True

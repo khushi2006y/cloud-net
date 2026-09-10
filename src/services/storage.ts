@@ -153,7 +153,9 @@ export function addEventWithProcessing(
       longitude: rawEvent.longitude,
       timestamp: rawEvent.timestamp,
       source: rawEvent.source,
-      isOfficialSource: rawEvent.isOfficialSource
+      isOfficialSource: rawEvent.isOfficialSource,
+      exifMetadata: rawEvent.exifMetadata,
+      timestamps: rawEvent.timestamps
     },
     currentEvents
   );
@@ -180,7 +182,9 @@ export function addEventWithProcessing(
     supporting_evidence: ruleResult.supportingEvidence,
     contradictingEvidence: ruleResult.contradictingEvidence,
     contradicting_evidence: ruleResult.contradictingEvidence,
-    isContradictory: ruleResult.initialStatus === 'contradicted' || ruleResult.displayPolicy === 'SHOW_CONTRADICTED'
+    isContradictory: ruleResult.initialStatus === 'contradicted' || ruleResult.displayPolicy === 'SHOW_CONTRADICTED',
+    confidenceBreakdown: ruleResult.confidenceBreakdown,
+    exifMetadata: ruleResult.exifMetadata || rawEvent.exifMetadata
   };
 
   // If contradictory, retain in storage as contradicted/quarantined (display_policy = SHOW_CONTRADICTED)

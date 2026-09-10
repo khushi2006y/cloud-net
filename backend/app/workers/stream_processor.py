@@ -100,7 +100,8 @@ class StreamProcessor:
             duplicate_info=dedup_res,
             media_metadata=event_dict.get("media_metadata"),
             root_origin_id=event_dict.get("root_origin_id"),
-            upstream_sources=event_dict.get("upstream_sources")
+            upstream_sources=event_dict.get("upstream_sources"),
+            effective_until=event_dict.get("effective_until")
         )
 
         # 6. Construct WeatherEvent entity
@@ -125,6 +126,7 @@ class StreamProcessor:
             event_time=event_dict.get("event_time"),
             capture_time=event_dict.get("capture_time"),
             upload_time=event_dict.get("upload_time", datetime.utcnow()),
+            effective_until=event_dict.get("effective_until"),
             confidence_score=eval_result.confidence_score,
             verification_status=eval_result.verification_status,
             spam_score=eval_result.spam_score,
@@ -133,7 +135,8 @@ class StreamProcessor:
             duplicate_of=eval_result.duplicate_of,
             root_origin_id=event_dict.get("root_origin_id"),
             upstream_sources=json.dumps(event_dict.get("upstream_sources", [])),
-            media_url=event_dict.get("media_url")
+            media_url=event_dict.get("media_url"),
+            source_url=event_dict.get("source_url")
         )
 
         db.add(new_event)

@@ -1,4 +1,15 @@
-import { WeatherEvent, EventCategory, ProcessingRuleResult, VerificationStatus, SourceTrustLevel, ReportSource, DisplayPolicy } from '../types/weather';
+import { 
+  WeatherEvent, 
+  EventCategory, 
+  ProcessingRuleResult, 
+  VerificationStatus, 
+  SourceTrustLevel, 
+  ReportSource, 
+  DisplayPolicy,
+  ConfidenceBreakdown,
+  PenaltyItem,
+  ExifMetadata
+} from '../types/weather';
 
 // Haversine distance calculation in Kilometers
 export function calculateDistanceKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
@@ -496,6 +507,12 @@ export function evaluateEventRules(
     isOfficialSource?: boolean;
     hasMedia?: boolean;
     temperatureC?: number;
+    exifMetadata?: ExifMetadata;
+    timestamps?: {
+      eventTime?: string;
+      captureTime?: string;
+      uploadTime?: string;
+    };
   },
   existingEvents: WeatherEvent[]
 ): ProcessingRuleResult {
@@ -627,20 +644,141 @@ export function evaluateEventRules(
     supportingEvidence.push(telCheck.supportingReason!);
   }
 
-  // 6. Final Status & Confidence Calculation
-  let overallConfidence = Math.round((nlpConfidence * 0.4) + (sourceTrust.credibilityScore * 0.6));
-  overallConfidence += telCheck.confidenceDelta;
-  overallConfidence = Math.max(5, Math.min(99, overallConfidence));
+  // 6. 6-Parameter Multi-Factor Composite Confidence Calculation
+  // Harmonized directly with backend/app/intelligence/evidence_engine.py & backend/app/core/config.py:
+  // - Source Reliability (25%)
+  // - Temporal Consistency / Freshness (20%)
+  // - Geographic Boundary Consistency (20%)
+  // - Independent Corroboration (15%)
+  // - Telemetry Agreement (10%)
+  // - Content / NLP Consistency (10%)
+  const sourceScore = sourceTrust.credibilityScore;
+
+  // 3-Tier Temporal Freshness Score
+  // Evaluates eventTime, captureTime, and uploadTime
+  const eventEffectiveTime = newEvent.timestamps?.eventTime || newEvent.timestamp;
+  const eventAgeHours = Math.max(0, (Date.now() - new Date(eventEffectiveTime).getTime()) / (1000 * 60 * 60));
+  const temporalScore = eventAgeHours < 1 ? 100 : eventAgeHours < 6 ? 85 : eventAgeHours < 24 ? 60 : 25;
+
+  // Geographic Validity Score (Indian sovereign bounding box: 5°-38°N, 67°-99°E)
+  const isWithinIndia = !isNaN(newEvent.latitude) && !isNaN(newEvent.longitude) &&
+                        newEvent.latitude >= 5.0 && newEvent.latitude <= 38.0 &&
+                        newEvent.longitude >= 67.0 && newEvent.longitude <= 99.0;
+  const geoScore = isWithinIndia ? 100 : 10;
+
+  // Corroboration Score
+  const corroborationScore = telCheck.confirms ? 90 : 50;
+
+  // Physical Telemetry Agreement Score (Open-Meteo Synoptic Station)
+  const telemetryScore = telCheck.confirms ? 95 : telCheck.contradicts ? 10 : 50;
+
+  // Content / NLP Lexicon Score
+  const contentScore = nlpConfidence;
+
+  // Auditable Forensic Penalty Ledger (-60, -45, -40, -35, -25)
+  const penaltiesList: PenaltyItem[] = [];
+
+  if (isContradictory) {
+    penaltiesList.push({
+      code: 'SEMANTIC_CONTRADICTION',
+      reason: 'Direct semantic contradiction between claimed category and observational text body',
+      points: 60
+    });
+  }
+
+  if (!isWithinIndia) {
+    penaltiesList.push({
+      code: 'GEOSPATIAL_OUT_OF_BOUNDS',
+      reason: `Coordinates [${newEvent.latitude.toFixed(2)}, ${newEvent.longitude.toFixed(2)}] lie outside sovereign Indian territory`,
+      points: 40
+    });
+    contradictingEvidence.push(`Geospatial Anomaly: Coordinates [${newEvent.latitude.toFixed(2)}, ${newEvent.longitude.toFixed(2)}] lie outside Indian territory`);
+  }
+
+  // EXIF Hardware Metadata GPS Verification (Scenario D)
+  if (newEvent.exifMetadata?.gpsLatitude !== undefined && newEvent.exifMetadata?.gpsLongitude !== undefined) {
+    const exifLat = newEvent.exifMetadata.gpsLatitude;
+    const exifLng = newEvent.exifMetadata.gpsLongitude;
+    const isExifInIndia = exifLat >= 5.0 && exifLat <= 38.0 && exifLng >= 67.0 && exifLng <= 99.0;
+    if (!isExifInIndia) {
+      penaltiesList.push({
+        code: 'EXIF_LOCATION_CONFLICT',
+        reason: `Exif Hardware Mismatch: Camera metadata places capture outside India (${exifLat.toFixed(2)}°N, ${exifLng.toFixed(2)}°E)`,
+        points: 45
+      });
+      contradictingEvidence.push(`Exif Location Conflict: Hardware GPS [${exifLat.toFixed(2)}, ${exifLng.toFixed(2)}] does not match Indian subcontinent.`);
+    }
+  }
+
+  if (telCheck.contradicts) {
+    penaltiesList.push({
+      code: 'TELEMETRY_CONTRADICTION',
+      reason: telCheck.contradictingReason || 'Physical divergence recorded by regional synoptic station (e.g. 0.0mm rain during flood)',
+      points: 35
+    });
+  }
+
+  // 3-Tier Stale Media Anomaly (capture older than 72 hours)
+  const captureTimestamp = newEvent.exifMetadata?.captureTimestamp || newEvent.timestamps?.captureTime;
+  if (captureTimestamp) {
+    const captureAgeHours = Math.max(0, (Date.now() - new Date(captureTimestamp).getTime()) / (1000 * 60 * 60));
+    if (captureAgeHours > 72) {
+      penaltiesList.push({
+        code: 'STALE_MEDIA_CONFLICT',
+        reason: `Stale Media: Observation captured ${Math.round(captureAgeHours / 24)} days prior to upload`,
+        points: 25
+      });
+      contradictingEvidence.push(`Stale Media Conflict: Evidence was captured ${Math.round(captureAgeHours / 24)} days ago but submitted as an active incident`);
+    }
+  } else if (eventAgeHours > 72) {
+    penaltiesList.push({
+      code: 'STALE_MEDIA_CONFLICT',
+      reason: `Stale Media: Event reported ${Math.round(eventAgeHours / 24)} days after claimed occurrence`,
+      points: 25
+    });
+    contradictingEvidence.push(`Stale Media Conflict: Event reported ${Math.round(eventAgeHours / 24)} days after claimed occurrence`);
+  }
+
+  // Base weighted confidence formula
+  const baseConfidence = (
+    (sourceScore * 0.25) +
+    (temporalScore * 0.20) +
+    (geoScore * 0.20) +
+    (corroborationScore * 0.15) +
+    (telemetryScore * 0.10) +
+    (contentScore * 0.10)
+  );
+
+  const totalPenalties = penaltiesList.reduce((acc, p) => acc + p.points, 0);
+  const overallConfidence = Math.round(Math.max(5, Math.min(99, baseConfidence - totalPenalties)));
+
+  const confidenceBreakdown: ConfidenceBreakdown = {
+    sourceScore,
+    sourceWeight: 0.25,
+    temporalScore,
+    temporalWeight: 0.20,
+    geoScore,
+    geoWeight: 0.20,
+    corroborationScore,
+    corroborationWeight: 0.15,
+    telemetryScore,
+    telemetryWeight: 0.10,
+    contentScore,
+    contentWeight: 0.10,
+    baseConfidence: Math.round(baseConfidence),
+    penalties: penaltiesList,
+    totalPenalties,
+    finalConfidence: overallConfidence
+  };
 
   let initialStatus: VerificationStatus = 'unverified';
   let displayPolicy: DisplayPolicy = 'HIDE_UNVERIFIED';
 
-  if (isContradictory) {
+  if (isContradictory || penaltiesList.some(p => p.code === 'EXIF_LOCATION_CONFLICT' || p.code === 'SEMANTIC_CONTRADICTION')) {
     initialStatus = 'contradicted';
     displayPolicy = 'SHOW_CONTRADICTED';
   } else if (sourceTrust.trustLevel === 'official') {
     initialStatus = 'verified';
-    overallConfidence = Math.max(92, overallConfidence);
     displayPolicy = 'SHOW_VERIFIED';
     supportingEvidence.push('Official meteorological authority feed');
   } else if (sourceTrust.trustLevel === 'trusted_media' || (telCheck.confirms && overallConfidence >= 75)) {
@@ -664,7 +802,7 @@ export function evaluateEventRules(
   return {
     isDuplicate: false,
     isFlagged: initialStatus === 'unverified',
-    isContradictory,
+    isContradictory: initialStatus === 'contradicted',
     shouldAutoDelete: false,
     suggestedCategory,
     confidence: overallConfidence,
@@ -675,7 +813,9 @@ export function evaluateEventRules(
     matchedKeywords,
     displayPolicy,
     supportingEvidence,
-    contradictingEvidence
+    contradictingEvidence,
+    confidenceBreakdown,
+    exifMetadata: newEvent.exifMetadata
   };
 }
 

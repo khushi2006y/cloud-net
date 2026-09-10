@@ -204,6 +204,8 @@ async def list_events(
     state: Optional[str] = Query(None, description="Filter by state"),
     city: Optional[str] = Query(None, description="Filter by city"),
     search: Optional[str] = Query(None, description="Search in title or description"),
+    source_type: Optional[str] = Query(None, description="Filter by source type (OFFICIAL_GOVERNMENT_ALERT, OFFICIAL_GOVERNMENT_MARINE, WEATHER_PROVIDER, WEATHER_API, CITIZEN, SOCIAL, IMD)"),
+    source_id: Optional[str] = Query(None, description="Filter by exact source ID"),
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db)
@@ -217,6 +219,10 @@ async def list_events(
         conditions.append(WeatherEvent.verification_status == status.upper())
     if severity:
         conditions.append(WeatherEvent.severity == severity.upper())
+    if source_type:
+        conditions.append(WeatherEvent.source_type == source_type.upper())
+    if source_id:
+        conditions.append(WeatherEvent.source_id == source_id)
     if state and state != "All States":
         conditions.append(WeatherEvent.state.ilike(f"%{state}%"))
     if city:

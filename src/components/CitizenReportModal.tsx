@@ -17,13 +17,15 @@ import {
   WifiOff
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
-import { EventCategory, SeverityLevel, WeatherEvent, WeatherMood } from '../types/weather';
+import { EventCategory, SeverityLevel, WeatherEvent, WeatherMood, ExifMetadata } from '../types/weather';
 import { CATEGORY_CONFIG, INDIAN_STATES, MAJOR_INDIAN_CITIES } from '../data/initialEvents';
 import { addEventWithProcessing, saveUserReport } from '../services/storage';
 import { checkContradiction } from '../services/processingEngine';
-import { crossValidateWithImdApi, ImdCrossCheckResult } from '../services/weatherApi';
+import { crossValidateWithSynopticTelemetry as crossValidateWithImdApi, ImdCrossCheckResult } from '../services/weatherApi';
 import { connectivityManager } from '../services/connectivityService';
 import { offlineStorage, PendingReport } from '../services/offlineStorage';
+import { parseImageExif, ParsedExifResult } from '../services/exifParser';
+import { apiClient } from '../services/apiClient';
 
 interface CitizenReportModalProps {
   isOpen: boolean;
@@ -58,6 +60,42 @@ export const CitizenReportModal: React.FC<CitizenReportModalProps> = ({
   const [mediaUrl, setMediaUrl] = useState('');
   const [isLocating, setIsLocating] = useState(false);
   const [locationSuccess, setLocationSuccess] = useState(false);
+
+  // 3-Tier Temporal Consistency & EXIF Simulation States
+  const [eventTiming, setEventTiming] = useState<'realtime' | 'delayed_2h' | 'stale_4d'>('realtime');
+  const [exifSimulation, setExifSimulation] = useState<'local_match' | 'foreign_spoof' | 'stale_date'>('local_match');
+  const [parsedExif, setParsedExif] = useState<ParsedExifResult | null>(null);
+  const [isParsingExif, setIsParsingExif] = useState<boolean>(false);
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const previewUrl = URL.createObjectURL(file);
+    setMediaUrl(previewUrl);
+    setIsParsingExif(true);
+
+    try {
+      const exif = await parseImageExif(file);
+      setParsedExif(exif);
+
+      if (exif.hasExif) {
+        if (exif.isWithinIndia === false) {
+          setExifSimulation('foreign_spoof');
+        } else if (exif.isWithinIndia === true) {
+          setExifSimulation('local_match');
+        }
+
+        if (exif.isStale) {
+          setEventTiming('stale_4d');
+        }
+      }
+    } catch (err) {
+      console.warn('[CloudNet EXIF] Extraction notice:', err);
+    } finally {
+      setIsParsingExif(false);
+    }
+  };
 
   // Sync prefilled location if provided from map search
   React.useEffect(() => {
@@ -133,17 +171,6 @@ export const CitizenReportModal: React.FC<CitizenReportModalProps> = ({
       setState(matched.state);
       setLatitude(matched.lat);
       setLongitude(matched.lng);
-    }
-  };
-
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setMediaUrl(reader.result as string);
-      };
-      reader.readAsDataURL(file);
     }
   };
 
@@ -228,7 +255,7 @@ export const CitizenReportModal: React.FC<CitizenReportModalProps> = ({
       return;
     }
 
-    // 2. Real-Time IMD Synoptic API Cross-Validation Check (Online)
+    // 2. Real-Time Synoptic API Cross-Validation Check (Online)
     setIsCrossCheckingImd(true);
     let imdCheck: ImdCrossCheckResult | null = null;
     try {
@@ -238,7 +265,7 @@ export const CitizenReportModal: React.FC<CitizenReportModalProps> = ({
         category
       );
     } catch (err) {
-      console.warn('IMD API live cross check error:', err);
+      console.warn('Synoptic API live cross check error:', err);
     }
     setIsCrossCheckingImd(false);
     setImdCrossCheckResult(imdCheck);
@@ -247,10 +274,77 @@ export const CitizenReportModal: React.FC<CitizenReportModalProps> = ({
 
     const title = `${CATEGORY_CONFIG[category].label} in ${city}`;
 
+    // 3-Tier Temporal Consistency Triangle (Event Time -> Capture Time -> Upload Time)
+    let eventTimeStr = new Date().toISOString();
+    if (eventTiming === 'delayed_2h') {
+      eventTimeStr = new Date(Date.now() - 2 * 3600 * 1000).toISOString();
+    } else if (eventTiming === 'stale_4d') {
+      eventTimeStr = new Date(Date.now() - 96 * 3600 * 1000).toISOString();
+    }
+
+    let captureTimeStr = eventTimeStr;
+    let exifLat = Number(latitude) || 19.0760;
+    let exifLng = Number(longitude) || 72.8777;
+    let cameraModel = 'Apple iPhone 15 Pro (Hardware GPS Geotagged)';
+
+    if (parsedExif?.hasExif && parsedExif.gpsLatitude !== undefined && parsedExif.gpsLongitude !== undefined) {
+      exifLat = parsedExif.gpsLatitude;
+      exifLng = parsedExif.gpsLongitude;
+      if (parsedExif.cameraModel) cameraModel = parsedExif.cameraModel;
+      if (parsedExif.captureTimestamp) captureTimeStr = parsedExif.captureTimestamp;
+    } else if (exifSimulation === 'foreign_spoof') {
+      exifLat = 51.5074; // London, UK (Foreign GPS outside India)
+      exifLng = -0.1278;
+      cameraModel = 'Sony Alpha A7 (EXIF GeoTag: London UK)';
+    } else if (exifSimulation === 'stale_date') {
+      captureTimeStr = new Date(Date.now() - 96 * 3600 * 1000).toISOString();
+      cameraModel = 'Canon EOS R5 (EXIF Hardware Timestamp: 4 Days Old)';
+    }
+
+    const isExifWithinIndia = (exifLat >= 5.0 && exifLat <= 38.0 && exifLng >= 67.0 && exifLng <= 99.0);
+    const isStaleCapture = exifSimulation === 'stale_date' || eventTiming === 'stale_4d' || Boolean(parsedExif?.isStale);
+
+    const exifMetadata: ExifMetadata | undefined = mediaUrl ? {
+      gpsLatitude: exifLat,
+      gpsLongitude: exifLng,
+      captureTimestamp: captureTimeStr,
+      cameraModel,
+      isHardwareGpsMatch: isExifWithinIndia,
+      isStaleMedia: isStaleCapture
+    } : undefined;
+
+    const timestamps = {
+      eventTime: eventTimeStr,
+      captureTime: captureTimeStr,
+      uploadTime: new Date().toISOString()
+    };
+
+    // Asynchronous synchronization to FastAPI backend with forensic media metadata
+    apiClient.submitReport({
+      title,
+      description,
+      category,
+      severity,
+      latitude: Number(latitude) || 19.0760,
+      longitude: Number(longitude) || 72.8777,
+      city: city.trim() || 'Unknown City',
+      state: state || 'Maharashtra',
+      event_time: eventTimeStr,
+      capture_time: captureTimeStr,
+      media_url: mediaUrl,
+      source_author: authorName.trim() ? `${authorName.trim()} (Citizen)` : 'Citizen Reporter',
+      media_metadata: exifMetadata ? {
+        camera_model: cameraModel,
+        gps_latitude: exifLat,
+        gps_longitude: exifLng,
+        capture_timestamp: captureTimeStr
+      } : undefined
+    }).catch(err => console.warn('[CloudNet] Backend sync notice:', err));
+
     const result = addEventWithProcessing({
       source: 'citizen',
       sourceAuthor: authorName.trim() ? `${authorName.trim()} (Citizen)` : 'Citizen Reporter',
-      timestamp: new Date().toISOString(),
+      timestamp: eventTimeStr,
       city: city.trim() || 'Unknown City',
       state: state || 'Maharashtra',
       latitude: Number(latitude) || 19.0760,
@@ -267,13 +361,15 @@ export const CitizenReportModal: React.FC<CitizenReportModalProps> = ({
         isMatched: imdCheck.isMatchedWithImd,
         imdCategory: imdCheck.imdCategory,
         note: imdCheck.explanation
-      } : undefined
+      } : undefined,
+      exifMetadata,
+      timestamps
     });
 
     // If processing engine marked it as contradictory or auto-deleted
     if (result.isFlagged && result.event.isContradictory) {
       setContradictionAlert({
-        reason: result.flagReason || 'Report contradicts itself and was automatically discarded.',
+        reason: result.flagReason || 'Report contradicts physical telemetry or location invariants.',
         term: 'Contradiction'
       });
       return;
@@ -289,7 +385,7 @@ export const CitizenReportModal: React.FC<CitizenReportModalProps> = ({
       onMoodChange(category);
     }
 
-    // Confetti only if verified by IMD API
+    // Confetti only if verified by synoptic telemetry
     if (isVerifiedByImd) {
       confetti({
         particleCount: 70,
@@ -398,15 +494,15 @@ export const CitizenReportModal: React.FC<CitizenReportModalProps> = ({
                   {submissionResult.isOfflineQueued
                     ? 'Saved Locally — Queued for Automatic Sync!'
                     : submissionResult.event.isImdCorroborated || submissionResult.event.verificationStatus === 'verified'
-                    ? 'Verified by IMD API & Published to Live Map!'
-                    : 'Report Logged — Held in Triage (Hidden from Map)'}
+                    ? 'Corroborated by Synoptic Station & Published to Live Map!'
+                    : 'Report Logged — Held in Triage (Hidden from Public Map)'}
                 </h4>
                 <p className="text-xs font-mono text-slate-500 mt-1">
                   Incident Reference: <strong>{submissionResult.event.id}</strong>
                 </p>
               </div>
 
-              {/* IMD API Verification or Offline Queue Badge */}
+              {/* Synoptic Station Verification or Offline Queue Badge */}
               {submissionResult.isOfflineQueued ? (
                 <div className="p-4 rounded-2xl border text-left text-xs font-medium bg-amber-50 border-amber-200 text-amber-950 space-y-2">
                   <div className="flex items-center justify-between font-bold mb-1">
@@ -440,8 +536,8 @@ export const CitizenReportModal: React.FC<CitizenReportModalProps> = ({
                       <ShieldCheck className="w-4 h-4" />
                       <span>
                         {submissionResult.event.isImdCorroborated 
-                          ? 'IMD API Corroboration: MATCH CONFIRMED' 
-                          : 'IMD API Corroboration: DIVERGENCE (PENDING TRIAGE)'}
+                          ? 'Synoptic Station Corroboration: MATCH CONFIRMED' 
+                          : 'Synoptic Station Corroboration: DIVERGENCE (PENDING TRIAGE)'}
                       </span>
                     </span>
                     <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase ${
@@ -594,21 +690,91 @@ export const CitizenReportModal: React.FC<CitizenReportModalProps> = ({
                 />
               </div>
 
-              {/* Photo Evidence */}
-              <div className="space-y-2">
+              {/* Step 4: 3-Tier Temporal Consistency Triangle */}
+              <div className="space-y-1.5 p-3 rounded-2xl bg-slate-50 border border-slate-200/80">
                 <div className="flex items-center justify-between">
-                  <label className="text-slate-700 font-bold">
-                    4. Photo Proof (Optional)
+                  <label className="text-slate-800 font-bold text-xs flex items-center space-x-1.5">
+                    <Clock className="w-3.5 h-3.5 text-sky-600" />
+                    <span>4. 3-Tier Observation Timing</span>
                   </label>
-                  <div className="flex items-center space-x-1">
-                    <span className="text-[10px] text-slate-400 font-medium">Sample Photos:</span>
+                  <span className="text-[10px] text-slate-500 font-medium">Anti-Staleness Gate</span>
+                </div>
+
+                <div className="grid grid-cols-3 gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setEventTiming('realtime')}
+                    className={`py-1.5 px-2 rounded-xl text-center text-xs font-bold border transition-all cursor-pointer ${
+                      eventTiming === 'realtime'
+                        ? 'bg-sky-600 text-white border-sky-600 shadow-xs'
+                        : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                    }`}
+                  >
+                    <div>Live / Realtime</div>
+                    <div className="text-[9px] font-normal opacity-80">&lt; 15 mins</div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setEventTiming('delayed_2h')}
+                    className={`py-1.5 px-2 rounded-xl text-center text-xs font-bold border transition-all cursor-pointer ${
+                      eventTiming === 'delayed_2h'
+                        ? 'bg-amber-600 text-white border-amber-600 shadow-xs'
+                        : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                    }`}
+                  >
+                    <div>Delayed</div>
+                    <div className="text-[9px] font-normal opacity-80">~2 hours ago</div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setEventTiming('stale_4d')}
+                    className={`py-1.5 px-2 rounded-xl text-center text-xs font-bold border transition-all cursor-pointer ${
+                      eventTiming === 'stale_4d'
+                        ? 'bg-rose-600 text-white border-rose-600 shadow-xs'
+                        : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                    }`}
+                  >
+                    <div>Stale Incident</div>
+                    <div className="text-[9px] font-normal opacity-80">4 days old (-25 pts)</div>
+                  </button>
+                </div>
+              </div>
+
+              {/* Step 5: Photo Evidence & EXIF Hardware Metadata Forensics */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between flex-wrap gap-1.5">
+                  <label className="text-slate-700 font-bold">
+                    5. Photo Proof & EXIF Hardware Geotag
+                  </label>
+                  <div className="flex items-center space-x-1.5">
+                    <input
+                      type="file"
+                      id="citizen-photo-upload"
+                      accept="image/jpeg,image/png,image/webp"
+                      onChange={handleFileUpload}
+                      className="hidden"
+                    />
+                    <label
+                      htmlFor="citizen-photo-upload"
+                      className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg bg-sky-50 hover:bg-sky-100 text-sky-800 text-[10px] font-bold border border-sky-200 transition cursor-pointer shadow-xs"
+                    >
+                      <Camera className="w-3 h-3 text-sky-600" />
+                      <span>{isParsingExif ? 'Analyzing EXIF...' : 'Upload Device Photo'}</span>
+                    </label>
+
+                    <span className="text-[10px] text-slate-400 font-medium">Presets:</span>
                     {SAMPLE_PHOTO_PRESETS.map(p => (
                       <button
                         type="button"
                         key={p.label}
-                        onClick={() => setMediaUrl(p.url)}
+                        onClick={() => {
+                          setMediaUrl(p.url);
+                          setParsedExif(null);
+                        }}
                         className={`text-[10px] px-2 py-0.5 rounded-md border font-semibold transition-all cursor-pointer ${
-                          mediaUrl === p.url
+                          mediaUrl === p.url && !parsedExif
                             ? 'bg-sky-600 text-white border-sky-600'
                             : 'bg-slate-100 text-slate-700 border-slate-200'
                         }`}
@@ -619,16 +785,102 @@ export const CitizenReportModal: React.FC<CitizenReportModalProps> = ({
                   </div>
                 </div>
 
+                {/* Real-time EXIF extraction feedback banner */}
+                {parsedExif && parsedExif.hasExif && (
+                  <div className={`p-2.5 rounded-xl text-xs space-y-1 border transition-all ${
+                    parsedExif.isWithinIndia === false
+                      ? 'bg-rose-50 border-rose-200 text-rose-900'
+                      : parsedExif.isStale
+                      ? 'bg-amber-50 border-amber-200 text-amber-900'
+                      : 'bg-emerald-50 border-emerald-200 text-emerald-900'
+                  }`}>
+                    <div className="flex items-center justify-between font-bold text-[11px]">
+                      <span className="flex items-center space-x-1">
+                        <ShieldCheck className="w-3.5 h-3.5" />
+                        <span>Live Binary EXIF Hardware Analysis</span>
+                      </span>
+                      <span className={`text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded border ${
+                        parsedExif.isWithinIndia === false
+                          ? 'bg-rose-600 text-white border-rose-700'
+                          : parsedExif.isStale
+                          ? 'bg-amber-600 text-white border-amber-700'
+                          : 'bg-emerald-600 text-white border-emerald-700'
+                      }`}>
+                        {parsedExif.isWithinIndia === false ? '⚠ Out of Territory' : parsedExif.isStale ? '⏱ Stale Media' : '✓ Subcontinent Match'}
+                      </span>
+                    </div>
+                    <div className="text-[10px] font-mono space-y-0.5 text-slate-700">
+                      <div>Hardware: <strong>{parsedExif.cameraModel || 'Detected Digital Camera'}</strong></div>
+                      {parsedExif.gpsLatitude !== undefined && (
+                        <div>Hardware GPS: <strong>{parsedExif.gpsLatitude.toFixed(4)}°N, {parsedExif.gpsLongitude?.toFixed(4)}°E</strong></div>
+                      )}
+                      {parsedExif.captureTimestamp && (
+                        <div>Capture Time: <strong>{new Date(parsedExif.captureTimestamp).toLocaleString()}</strong> {parsedExif.captureAgeHours !== undefined ? `(${parsedExif.captureAgeHours}h ago)` : ''}</div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 {mediaUrl && (
-                  <div className="relative rounded-2xl overflow-hidden h-28 border border-slate-200 mt-1 shadow-sm">
-                    <img src={mediaUrl} alt="Preview" className="w-full h-full object-cover" />
-                    <button
-                      type="button"
-                      onClick={() => setMediaUrl('')}
-                      className="absolute top-2 right-2 p-1 bg-slate-900/80 text-white rounded-lg hover:bg-slate-900 cursor-pointer"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
+                  <div className="space-y-2">
+                    <div className="relative rounded-2xl overflow-hidden h-28 border border-slate-200 mt-1 shadow-sm">
+                      <img src={mediaUrl} alt="Preview" className="w-full h-full object-cover" />
+                      <button
+                        type="button"
+                        onClick={() => setMediaUrl('')}
+                        className="absolute top-2 right-2 p-1 bg-slate-900/80 text-white rounded-lg hover:bg-slate-900 cursor-pointer"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+
+                    {/* EXIF Forensic Controls */}
+                    <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs space-y-1.5">
+                      <div className="flex items-center justify-between font-bold text-[11px] text-slate-700">
+                        <span>📷 Hardware EXIF GPS Match Gate</span>
+                        <span className="text-[10px] text-slate-400 font-mono">Scenario D Forensics</span>
+                      </div>
+                      <div className="grid grid-cols-3 gap-1.5 text-[10px]">
+                        <button
+                          type="button"
+                          onClick={() => setExifSimulation('local_match')}
+                          className={`p-1.5 rounded-lg border font-bold text-center transition-all cursor-pointer ${
+                            exifSimulation === 'local_match'
+                              ? 'bg-emerald-600 text-white border-emerald-600'
+                              : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                          }`}
+                        >
+                          <div>Valid Local GPS</div>
+                          <div className="text-[8px] font-normal opacity-85">India Subcontinent</div>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setExifSimulation('foreign_spoof')}
+                          className={`p-1.5 rounded-lg border font-bold text-center transition-all cursor-pointer ${
+                            exifSimulation === 'foreign_spoof'
+                              ? 'bg-rose-600 text-white border-rose-600'
+                              : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                          }`}
+                        >
+                          <div>Foreign GPS (Spoof)</div>
+                          <div className="text-[8px] font-normal opacity-85">London UK (-45 pts)</div>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setExifSimulation('stale_date')}
+                          className={`p-1.5 rounded-lg border font-bold text-center transition-all cursor-pointer ${
+                            exifSimulation === 'stale_date'
+                              ? 'bg-orange-600 text-white border-orange-600'
+                              : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                          }`}
+                        >
+                          <div>Stale Camera Date</div>
+                          <div className="text-[8px] font-normal opacity-85">4 Days Old (-25 pts)</div>
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 )}
               </div>
@@ -643,12 +895,12 @@ export const CitizenReportModal: React.FC<CitizenReportModalProps> = ({
                   {isCrossCheckingImd ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>Verifying against Live IMD Weather API...</span>
+                      <span>Verifying against Regional Synoptic Telemetry (Open-Meteo)...</span>
                     </>
                   ) : (
                     <>
                       <Send className="w-4 h-4" />
-                      <span>Submit & Verify via IMD API</span>
+                      <span>Submit & Cross-Verify via Synoptic Telemetry</span>
                     </>
                   )}
                 </button>

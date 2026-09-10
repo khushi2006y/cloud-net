@@ -20,6 +20,16 @@ async def init_database_and_seed():
     """Initializes tables and seeds default admin, sources, and synoptic events."""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # Safe migration for newly introduced columns on existing SQLite databases
+        for col_def in [
+            "ALTER TABLE weather_events ADD COLUMN source_url VARCHAR(512)",
+            "ALTER TABLE weather_events ADD COLUMN effective_until DATETIME"
+        ]:
+            try:
+                from sqlalchemy import text
+                await conn.execute(text(col_def))
+            except Exception:
+                pass
 
     async with AsyncSessionLocal() as session:
         # 1. Seed Admin User if not exists
@@ -36,10 +46,13 @@ async def init_database_and_seed():
             )
             session.add(admin)
 
-        # 2. Seed Default Ingestion Sources
+        # 2. Seed Default Ingestion Sources (Including Trusted Government & Private Feeds)
         sources_to_seed = [
-            ("src-open-meteo", "Open-Meteo Synoptic Station Network", "WEATHER_API", 96.0),
+            ("src-sachet-ndma", "SACHET — National Disaster Alert Portal (NDMA)", "OFFICIAL_GOVERNMENT_ALERT", 98.0),
+            ("src-incois-marine", "INCOIS — Indian National Centre for Ocean Information Services", "OFFICIAL_GOVERNMENT_MARINE", 96.0),
             ("src-imd-official", "India Meteorological Department (IMD)", "IMD", 98.0),
+            ("src-open-meteo", "Open-Meteo Synoptic Station Network", "WEATHER_API", 96.0),
+            ("src-skymet", "Skymet Weather Private Network", "WEATHER_PROVIDER", 88.0),
             ("src-citizen-portal", "Citizen Crowdsource Network", "CITIZEN", 72.0),
             ("src-social-stream-real", "Official Meteorological Social Stream (@Indiametdept / Twitter)", "SOCIAL", 92.0),
             ("src-gov-data", "data.gov.in Meteorological Datasets", "DATASET", 92.0)
@@ -97,11 +110,28 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# CORS configuration
+from starlette.middleware.base import BaseHTTPMiddleware
+from fastapi import Request
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """Enforces CERT-In and Indian Government Website (GIGW) security response headers."""
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = "geolocation=(self), microphone=(), camera=()"
+        response.headers["X-Permitted-Cross-Domain-Policies"] = "none"
+        return response
+
+app.add_middleware(SecurityHeadersMiddleware)
+
+# CORS configuration (CERT-In & OWASP Hardened — zero wildcard allowance)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.BACKEND_CORS_ORIGINS,
-    allow_origin_regex=r"https://.*\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

@@ -91,6 +91,13 @@ async def register(
     user_in: UserCreate,
     db: AsyncSession = Depends(get_db)
 ):
+    # Enforce minimum password strength
+    if len(user_in.password) < 8:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Password must be at least 8 characters long"
+        )
+
     # Check if username or email exists
     stmt = select(User).where((User.username == user_in.username) | (User.email == user_in.email))
     res = await db.execute(stmt)
@@ -101,12 +108,12 @@ async def register(
             detail="Username or email already registered"
         )
 
-    # Force role to USER for public registration unless explicitly approved
+    # Strictly enforce USER role for public registration (Privilege Escalation Defense)
     new_user = User(
         username=user_in.username,
         email=user_in.email,
         password_hash=get_password_hash(user_in.password),
-        role=user_in.role if user_in.role in ["USER", "OPERATOR"] else "USER",
+        role="USER",
         active=True
     )
     db.add(new_user)

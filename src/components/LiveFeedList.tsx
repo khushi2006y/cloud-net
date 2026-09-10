@@ -45,14 +45,23 @@ export const LiveFeedList: React.FC<LiveFeedListProps> = ({
 
   const getSourceIcon = (source: string) => {
     switch (source) {
+      case 'sachet':
+        return <span className="w-2 h-2 rounded-full bg-red-600 flex-shrink-0" title="SACHET NDMA" />;
+      case 'incois':
+        return <span className="w-2 h-2 rounded-full bg-cyan-600 flex-shrink-0" title="INCOIS Marine" />;
+      case 'imd':
+        return <span className="w-2 h-2 rounded-full bg-blue-600 flex-shrink-0" title="IMD Official" />;
+      case 'skymet':
+        return <span className="w-2 h-2 rounded-full bg-amber-600 flex-shrink-0" title="Skymet Weather" />;
       case 'twitter':
-        return <Twitter className="w-3.5 h-3.5 text-sky-500" />;
+      case 'social':
+        return <Twitter className="w-3.5 h-3.5 text-sky-500 flex-shrink-0" />;
       case 'api':
-        return <Radio className="w-3.5 h-3.5 text-teal-600" />;
+        return <Radio className="w-3.5 h-3.5 text-teal-600 flex-shrink-0" />;
       case 'citizen':
-        return <Users className="w-3.5 h-3.5 text-purple-600" />;
+        return <Users className="w-3.5 h-3.5 text-purple-600 flex-shrink-0" />;
       default:
-        return null;
+        return <Radio className="w-3.5 h-3.5 text-slate-500 flex-shrink-0" />;
     }
   };
 

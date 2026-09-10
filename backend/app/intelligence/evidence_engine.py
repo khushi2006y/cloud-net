@@ -53,15 +53,30 @@ def evaluate_event_evidence(
     duplicate_info: Optional[Dict[str, Any]] = None,
     media_metadata: Optional[Dict[str, Any]] = None,
     root_origin_id: Optional[str] = None,
-    upstream_sources: Optional[List[str]] = None
+    upstream_sources: Optional[List[str]] = None,
+    effective_until: Optional[datetime] = None
 ) -> EvidenceEvaluationResult:
     """
     Core Evidence Fusion Engine:
-    Transforms heterogeneous raw inputs into a multi-factor corroborated decision
-    with an explainable Evidence Confidence Score (0-100) and auditable evidence log.
+    Transforms heterogeneous raw inputs from government alerts (SACHET, INCOIS),
+    official synoptic stations (IMD, Open-Meteo), weather providers (Skymet),
+    and citizen reports into an auditable evidence chain with explainable Evidence Confidence.
     """
     evidence_items: List[Dict[str, Any]] = []
     penalties: float = 0.0
+
+    # Source Reliability Calibration based on trusted operational hierarchy
+    calibrated_reliability = source_reliability
+    if source_type == "OFFICIAL_GOVERNMENT_ALERT":
+        calibrated_reliability = max(98.0, source_reliability)
+    elif source_type in ["IMD", "OFFICIAL_GOVERNMENT_MARINE"]:
+        calibrated_reliability = max(96.0, source_reliability)
+    elif source_type == "WEATHER_API":
+        calibrated_reliability = max(96.0, source_reliability)
+    elif source_type == "WEATHER_PROVIDER":
+        calibrated_reliability = max(88.0, source_reliability)
+    elif source_type == "CITIZEN" and source_reliability == 70.0:
+        calibrated_reliability = 72.0
 
     # 1. Geospatial Consistency Check
     geo_res = validate_geographic_bounds(latitude, longitude)
@@ -104,6 +119,28 @@ def evaluate_event_evidence(
         temporal_score = 25.0
         penalties += 25.0
 
+    # 2b. Temporal Alert Expiration Evaluation (for SACHET, INCOIS, IMD bulletins)
+    is_alert_expired = False
+    if effective_until is not None:
+        now_utc = datetime.utcnow()
+        now_dt = now_utc.replace(tzinfo=effective_until.tzinfo) if effective_until.tzinfo else now_utc
+        if effective_until < now_dt:
+            is_alert_expired = True
+            penalties += 35.0
+            evidence_items.append({
+                "evidence_type": "ALERT_EXPIRATION",
+                "direction": "CONTRADICTING",
+                "score": -35.0,
+                "explanation": f"Temporal Alert Expiration: Advisory validity window expired at {effective_until.strftime('%Y-%m-%d %H:%M:%S UTC')}. Downgraded to STALE historical record."
+            })
+        else:
+            evidence_items.append({
+                "evidence_type": "ALERT_EXPIRATION",
+                "direction": "SUPPORTING",
+                "score": 10.0,
+                "explanation": f"Active Bulletin Window: Official advisory valid until {effective_until.strftime('%Y-%m-%d %H:%M:%S UTC')}."
+            })
+
     # 3. Layered NLP Classification & Spam Detection
     nlp_res = global_nlp_classifier.classify(text, claimed_category=claimed_category)
     final_category = nlp_res["category"]
@@ -140,9 +177,9 @@ def evaluate_event_evidence(
     # 5. Source Reliability Evaluation
     evidence_items.append({
         "evidence_type": "SOURCE_TRUST",
-        "direction": "SUPPORTING" if source_reliability >= 70.0 else "NEUTRAL",
-        "score": round((source_reliability / 100.0) * 25.0, 1),
-        "explanation": f"Source Type '{source_type}' rated at {source_reliability:.0f}% operational reliability."
+        "direction": "SUPPORTING" if calibrated_reliability >= 70.0 else "NEUTRAL",
+        "score": round((calibrated_reliability / 100.0) * 25.0, 1),
+        "explanation": f"Source Type '{source_type}' rated at {calibrated_reliability:.0f}% operational reliability."
     })
 
     # 6. Physical & Telemetry Cross-Verification
@@ -233,16 +270,37 @@ def evaluate_event_evidence(
             media_geo = validate_geographic_bounds(media_lat, media_lng)
             if not media_geo["is_valid"]:
                 penalties += 45.0
+                is_contradictory = True
+                contradiction_reason = f"Exif Location Conflict: Photograph hardware metadata places capture outside India ({media_lat:.2f}, {media_lng:.2f})."
                 evidence_items.append({
                     "evidence_type": "MEDIA_METADATA",
                     "direction": "CONTRADICTING",
                     "score": -40.0,
-                    "explanation": f"Exif Location Conflict: Photograph hardware metadata places capture outside India ({media_lat:.2f}, {media_lng:.2f})."
+                    "explanation": contradiction_reason
                 })
+
+        capture_ts = media_metadata.get("capture_timestamp")
+        if capture_ts:
+            try:
+                cap_str = str(capture_ts).replace('Z', '+00:00')
+                cap_dt = datetime.fromisoformat(cap_str)
+                if cap_dt.tzinfo:
+                    cap_dt = cap_dt.replace(tzinfo=None)
+                age_hours = (datetime.utcnow() - cap_dt).total_seconds() / 3600.0
+                if age_hours > 72.0:
+                    penalties += 25.0
+                    evidence_items.append({
+                        "evidence_type": "MEDIA_METADATA",
+                        "direction": "CONTRADICTING",
+                        "score": -25.0,
+                        "explanation": f"Stale Media Conflict: Camera hardware timestamp indicates capture was {round(age_hours/24, 1)} days ago."
+                    })
+            except Exception:
+                pass
 
     # Composite Confidence Equation (0 - 100)
     base_confidence = (
-        (source_reliability * settings.WEIGHT_SOURCE_RELIABILITY) +
+        (calibrated_reliability * settings.WEIGHT_SOURCE_RELIABILITY) +
         (temporal_score * settings.WEIGHT_TEMPORAL_CONSISTENCY) +
         (geo_score * settings.WEIGHT_GEOGRAPHIC_CONSISTENCY) +
         (corroboration_score * settings.WEIGHT_INDEPENDENT_CORROBORATION) +
@@ -255,7 +313,7 @@ def evaluate_event_evidence(
     # Verification Status Assignment
     if is_contradictory:
         status = "CONTRADICTED"
-    elif time_res.get("is_stale"):
+    elif is_alert_expired or time_res.get("is_stale"):
         status = "STALE"
     elif final_confidence < 40.0:
         status = "FLAGGED"

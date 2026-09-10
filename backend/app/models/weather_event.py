@@ -51,9 +51,11 @@ class WeatherEvent(Base):
     root_origin_id = Column(String(128), nullable=True, index=True)
     upstream_sources = Column(Text, nullable=True)  # JSON array string
 
-    # Attachments
+    # Attachments & References
     media_url = Column(String(512), nullable=True)
     media_type = Column(String(32), nullable=True)
+    source_url = Column(String(512), nullable=True)
+    effective_until = Column(DateTime, nullable=True, index=True)
 
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)

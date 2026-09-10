@@ -45,8 +45,15 @@ async def test_admin_auth_and_queue():
         token = login_res.json()["access_token"]
         assert token is not None
 
-        # Fetch verification queue
-        queue = await ac.get("/api/admin/verification-queue")
+        # Verify unauthenticated request to verification queue is blocked (CERT-In / OWASP compliance)
+        unauth_queue = await ac.get("/api/admin/verification-queue")
+        assert unauth_queue.status_code == 401
+
+        # Fetch verification queue with valid Bearer token
+        queue = await ac.get(
+            "/api/admin/verification-queue",
+            headers={"Authorization": f"Bearer {token}"}
+        )
         assert queue.status_code == 200
 
 
@@ -72,7 +79,7 @@ async def test_adversarial_scenarios_a_through_e():
         # Scenario D: 10-day-old photo with foreign GPS
         sc_d = await ac.post("/api/demo/scenario/D")
         assert sc_d.status_code == 200
-        assert sc_d.json()["event"]["verification"]["status"] in ["STALE", "FLAGGED"]
+        assert sc_d.json()["event"]["verification"]["status"] in ["STALE", "FLAGGED", "CONTRADICTED"]
 
         # Scenario E: Conflicting zero-precipitation telemetry
         sc_e = await ac.post("/api/demo/scenario/E")

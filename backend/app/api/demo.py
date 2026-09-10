@@ -1,16 +1,47 @@
 import time
 import random
 from datetime import datetime, timedelta
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
+from app.core.security import oauth2_scheme
+from app.api.auth import get_current_user
 from app.database.session import get_db
 from app.workers.stream_processor import global_stream_processor
 from app.api.websocket import ws_manager
 from app.api.events import format_event_out
 
-router = APIRouter(prefix="/demo", tags=["SIH Demonstration Suite"])
+
+async def verify_demo_access(
+    token: Optional[str] = Depends(oauth2_scheme),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Guards demonstration and simulation injection endpoints against unauthorized external use.
+    In production environments, strictly enforces ADMIN role authentication.
+    """
+    if settings.ENVIRONMENT.lower() == "production":
+        if not token:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Administrative authentication required for demonstration suites in production",
+                headers={"WWW-Authenticate": "Bearer"}
+            )
+        user = await get_current_user(token=token, db=db)
+        if user.role != "ADMIN":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied: Only administrators may execute demonstration scenarios in production"
+            )
+
+
+router = APIRouter(
+    prefix="/demo",
+    tags=["SIH Demonstration Suite"],
+    dependencies=[Depends(verify_demo_access)]
+)
 
 
 @router.post("/scenario/A")

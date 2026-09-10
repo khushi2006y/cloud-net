@@ -21,7 +21,9 @@ class CitizenReportCreate(BaseModel):
     ip_subnet: Optional[str] = None
     cell_tower_id: Optional[str] = None
     root_origin_id: Optional[str] = None
-    upstream_sources: Optional[List[str]] = []
+    # Forensic Media & Hardware EXIF Metadata (Scenario D)
+    media_metadata: Optional[dict] = None
+    exif_metadata: Optional[dict] = None
 
 
 class IngestionPayload(BaseModel):

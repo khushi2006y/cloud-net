@@ -52,6 +52,7 @@ class CitizenReportAdapter(BaseDataSource):
             "root_origin_id": report_dict.get("root_origin_id"),
             "upstream_sources": report_dict.get("upstream_sources") or [],
             "ip_subnet": report_dict.get("ip_subnet"),
-            "cell_tower_id": report_dict.get("cell_tower_id")
+            "cell_tower_id": report_dict.get("cell_tower_id"),
+            "media_metadata": report_dict.get("media_metadata") or report_dict.get("exif_metadata")
         }
         return [normalized]

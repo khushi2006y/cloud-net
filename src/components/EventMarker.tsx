@@ -17,6 +17,19 @@ import {
 } from 'lucide-react';
 
 /**
+ * Strict HTML entity escaping utility to prevent Stored / DOM-Based Cross-Site Scripting (XSS).
+ */
+export function escapeHtml(str: unknown): string {
+  if (str === null || str === undefined) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+/**
  * Computes data freshness: events older than 3 hours are STALE.
  */
 export function getDataFreshness(timestamp: string): 'CURRENT' | 'STALE' {
@@ -287,15 +300,15 @@ export function createStandardizedPopup(
 
       <!-- 5. Verification Status -->
       <span class="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full border ${statusBadgeBg}">
-        ${event.verificationStatus}
+        ${escapeHtml(event.verificationStatus)}
       </span>
     </div>
 
     <!-- 2. Location & Title -->
     <div class="mt-2">
-      <div class="font-bold text-slate-900 text-sm leading-tight">${event.title}</div>
+      <div class="font-bold text-slate-900 text-sm leading-tight">${escapeHtml(event.title)}</div>
       <div class="text-[11px] text-slate-500 font-medium flex items-center mt-0.5">
-        📍 <span>${event.city}${event.state ? `, ${event.state}` : ''}</span>
+        📍 <span>${escapeHtml(event.city)}${event.state ? `, ${escapeHtml(event.state)}` : ''}</span>
       </div>
     </div>
 
@@ -326,7 +339,7 @@ export function createStandardizedPopup(
     <div class="mt-2">
       <div class="text-[10px] font-bold text-emerald-800 uppercase tracking-wider mb-0.5">Supporting Evidence:</div>
       <ul class="text-[11px] text-slate-700 list-disc list-inside space-y-0.5 bg-emerald-50/50 p-1.5 rounded-lg border border-emerald-100">
-        ${supporting.map((s: string) => `<li>${s}</li>`).join('')}
+        ${supporting.map((s: string) => `<li>${escapeHtml(s)}</li>`).join('')}
       </ul>
     </div>
 
@@ -335,7 +348,7 @@ export function createStandardizedPopup(
       <div class="mt-2">
         <div class="text-[10px] font-bold text-rose-800 uppercase tracking-wider mb-0.5">Contradicting Evidence:</div>
         <ul class="text-[11px] text-rose-900 list-disc list-inside space-y-0.5 bg-rose-50 p-1.5 rounded-lg border border-rose-200">
-          ${contradicting.map((c: string) => `<li>${c}</li>`).join('')}
+          ${contradicting.map((c: string) => `<li>${escapeHtml(c)}</li>`).join('')}
         </ul>
       </div>
     ` : `
@@ -356,7 +369,7 @@ export function createStandardizedPopup(
 
     ${policy === 'SHOW_CONTRADICTED' ? `
       <div class="mt-3">
-        <button id="btn-view-contradiction-${event.id}" class="w-full py-1.5 px-2 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg text-[11px] transition shadow-xs cursor-pointer flex items-center justify-center space-x-1">
+        <button id="btn-view-contradiction-${escapeHtml(event.id)}" class="w-full py-1.5 px-2 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg text-[11px] transition shadow-xs cursor-pointer flex items-center justify-center space-x-1">
           <span>⚠ View Full Contradiction Audit</span>
         </button>
       </div>
