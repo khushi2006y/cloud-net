@@ -15,11 +15,18 @@ import {
   Clock, 
   CheckCircle2,
   ShieldAlert,
-  WifiOff
+  WifiOff,
+  AlertTriangle
 } from 'lucide-react';
 import { useConnectivity } from '../services/connectivityService';
 import { offlineStorage, OfflineSnapshot } from '../services/offlineStorage';
 import { OfflineEmergencyMap } from './OfflineEmergencyMap';
+import { 
+  resolveDisplayPolicy, 
+  createEventIcon, 
+  createStandardizedPopup, 
+  ContradictionCard 
+} from './EventMarker';
 
 interface MapViewProps {
   events: WeatherEvent[];
@@ -46,8 +53,9 @@ export const MapView: React.FC<MapViewProps> = ({
   
   const [pulseEnabled, setPulseEnabled] = useState<boolean>(true);
   const [mapMode, setMapMode] = useState<'standard' | 'radar' | 'thermal'>('standard');
-  // Strict IMD Verification Gate: Unverified reports do NOT show on map directly until verified by IMD API
+  // Strict Truth-Aware Map: Unverified and Contradicted reports are quarantined by default
   const [showUnverifiedOnMap, setShowUnverifiedOnMap] = useState<boolean>(false);
+  const [selectedContradictedEvent, setSelectedContradictedEvent] = useState<WeatherEvent | null>(null);
 
   const { isOffline, isDegraded } = useConnectivity();
   const [useTacticalMap, setUseTacticalMap] = useState<boolean>(false);
@@ -70,7 +78,7 @@ export const MapView: React.FC<MapViewProps> = ({
       zoomControl: false
     });
 
-    // Light CartoDB Voyager Basemap
+    // Light CartoDB Voyager Basemap (Clean Plain White / Light Basemap)
     L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
       attribution: '&copy; <a href="https://carto.com/">CARTO</a> | IMD Open Data',
       subdomains: 'abcd',
@@ -136,15 +144,26 @@ export const MapView: React.FC<MapViewProps> = ({
   // Update Markers
   useEffect(() => {
     if (!mapInstanceRef.current || !markersGroupRef.current) return;
-
     markersGroupRef.current.clearLayers();
 
-    // Strict Verification Filter: Unverified reports do NOT show directly on map until verified/matched with IMD API
+    // Authoritative Display Policy Filtering (Part 1 & 2)
+    // DUPLICATE events attach to parent clusters and do not render new markers.
+    // UNVERIFIED and CONTRADICTED events are hidden by default and only render when Flagged Reports layer is toggled.
     const mapEligibleEvents = events.filter(event => {
-      if (showUnverifiedOnMap) return true;
-      const isOfficial = event.source === 'api' || event.isOfficialSource === true;
-      const isVerified = event.verificationStatus === 'verified' || event.isImdCorroborated === true;
-      return isOfficial || isVerified;
+      const policy = resolveDisplayPolicy(event);
+
+      // Never render standalone markers for duplicates
+      if (policy === 'ATTACH_DUPLICATE') {
+        return false;
+      }
+
+      // Hide unverified and contradicted reports unless citizen/analyst opts in via Flagged Layer
+      if (policy === 'HIDE_UNVERIFIED' || policy === 'SHOW_CONTRADICTED') {
+        return showUnverifiedOnMap;
+      }
+
+      // SHOW_VERIFIED, SHOW_CORROBORATED, SHOW_PROVISIONAL, SHOW_STALE are rendered
+      return true;
     });
 
     // Big Data Optimization: Render top 350 most relevant markers to maintain 60 FPS
@@ -153,38 +172,8 @@ export const MapView: React.FC<MapViewProps> = ({
     markersToRender.forEach(event => {
       if (isNaN(event.latitude) || isNaN(event.longitude)) return;
 
-      const config = CATEGORY_CONFIG[event.category] || CATEGORY_CONFIG.rainfall;
-      const isSevere = event.severity === 'severe' || event.severity === 'extreme';
       const isSelected = selectedEvent?.id === event.id;
-      const isHyperlocal = event.id.includes('hyperlocal');
-      const isUnverifiedTriage = event.verificationStatus === 'unverified' && !event.isImdCorroborated && event.source !== 'api';
-
-      // Custom Clean Frosted HTML Marker Pin
-      const markerHtml = `
-        <div class="relative flex items-center justify-center cursor-pointer group" style="width: 44px; height: 44px;">
-          ${(pulseEnabled && isSevere) || isHyperlocal ? `
-            <div class="pulse-ring-light absolute rounded-full ${isHyperlocal ? 'border-2 border-sky-400' : ''}" style="width: 46px; height: 46px; background-color: ${isHyperlocal ? '#0284c7' : config.color}; opacity: 0.4;"></div>
-          ` : ''}
-          <div class="custom-weather-pin relative z-10 flex items-center justify-center rounded-2xl shadow-md transition-transform ${isSelected ? 'scale-125 ring-4 ring-sky-400' : ''} ${isHyperlocal ? 'ring-2 ring-emerald-500' : ''}" 
-               style="width: 36px; height: 36px; background: #ffffff; border: 2px solid ${isHyperlocal ? '#0284c7' : config.color}; box-shadow: 0 4px 14px rgba(0,0,0,0.14);">
-            <span style="font-size: 18px;">
-              ${config.emoji}
-            </span>
-          </div>
-          ${isHyperlocal ? `
-            <span class="absolute -top-1.5 -right-1 bg-sky-600 text-white text-[8px] font-extrabold px-1 rounded-full uppercase tracking-tighter shadow-xs">Area</span>
-          ` : ''}
-        </div>
-      `;
-
-      const customIcon = L.divIcon({
-        html: markerHtml,
-        className: 'custom-weather-pin-container',
-        iconSize: [44, 44],
-        iconAnchor: [22, 22],
-        popupAnchor: [0, -22]
-      });
-
+      const customIcon = createEventIcon(event, isSelected, pulseEnabled);
       const marker = L.marker([event.latitude, event.longitude], { icon: customIcon });
 
       marker.on('click', () => {
@@ -192,66 +181,32 @@ export const MapView: React.FC<MapViewProps> = ({
         if (onMoodChange) {
           onMoodChange(event.category);
         }
-      });
-
-      // Popup Content
-      const popupDiv = document.createElement('div');
-      popupDiv.className = 'p-1 font-sans text-slate-800';
-      popupDiv.style.minWidth = '250px';
-      popupDiv.style.maxWidth = '300px';
-
-      popupDiv.innerHTML = `
-        <div class="flex items-center justify-between pb-2 border-b border-slate-100">
-          <span class="text-xs font-bold px-2 py-0.5 rounded-lg flex items-center space-x-1" style="background: ${config.bgHex}; color: ${config.color}; border: 1px solid ${config.color}30;">
-            <span>${config.emoji}</span>
-            <span>${config.label}</span>
-          </span>
-          <span class="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${
-            event.verificationStatus === 'verified' ? 'bg-emerald-100 text-emerald-800' :
-            event.verificationStatus === 'flagged' ? 'bg-rose-100 text-rose-800' :
-            event.verificationStatus === 'duplicate' ? 'bg-purple-100 text-purple-800' :
-            'bg-amber-100 text-amber-800'
-          }">
-            ${event.verificationStatus}
-          </span>
-        </div>
-
-        <div class="mt-2">
-          <h4 class="text-xs font-bold text-slate-900 leading-snug">${event.title}</h4>
-          <p class="text-[11px] text-slate-600 mt-1 line-clamp-2">${event.description}</p>
-        </div>
-
-        ${event.mediaUrl ? `
-          <div class="mt-2 rounded-xl overflow-hidden border border-slate-200 h-28 w-full">
-            <img src="${event.mediaUrl}" alt="${event.category}" class="w-full h-full object-cover" />
-          </div>
-        ` : ''}
-
-        <div class="mt-3 pt-2 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500 font-medium">
-          <span>📍 <strong>${event.city}, ${event.state}</strong></span>
-          <span class="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-slate-100 text-slate-700">
-            ${event.source}
-          </span>
-        </div>
-
-        <button id="btn-view-intel-${event.id}" class="mt-2.5 w-full py-2 rounded-xl bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold transition-all shadow-xs flex items-center justify-center cursor-pointer">
-          <span>View Incident Details</span>
-        </button>
-      `;
-
-      marker.bindPopup(popupDiv);
-      marker.on('popupopen', () => {
-        const btn = document.getElementById(`btn-view-intel-${event.id}`);
-        if (btn) {
-          btn.onclick = () => {
-            onSelectEvent(event);
-            if (onOpenDetails) {
-              onOpenDetails(event);
-            }
-          };
+        const policy = resolveDisplayPolicy(event);
+        if (policy === 'SHOW_CONTRADICTED') {
+          setSelectedContradictedEvent(event);
         }
       });
 
+      // Standardized 9-Field Popup
+      const popupDiv = createStandardizedPopup(event, (contradictedEvt) => {
+        setSelectedContradictedEvent(contradictedEvt);
+      });
+
+      // Append incident detail button to popup
+      const detailBtn = document.createElement('button');
+      detailBtn.id = `btn-view-intel-${event.id}`;
+      detailBtn.className = 'mt-2.5 w-full py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition-all shadow-xs flex items-center justify-center cursor-pointer';
+      detailBtn.innerHTML = '<span>View Full Dossier</span>';
+      detailBtn.onclick = (e) => {
+        e.stopPropagation();
+        onSelectEvent(event);
+        if (onOpenDetails) {
+          onOpenDetails(event);
+        }
+      };
+      popupDiv.appendChild(detailBtn);
+
+      marker.bindPopup(popupDiv);
       marker.addTo(markersGroupRef.current!);
     });
   }, [events, pulseEnabled, selectedEvent, onSelectEvent, onOpenDetails, onMoodChange, showUnverifiedOnMap]);
@@ -323,9 +278,12 @@ export const MapView: React.FC<MapViewProps> = ({
       <div className="absolute top-4 left-4 z-10 flex flex-col space-y-2">
         <div className="bg-white/90 backdrop-blur-md px-3.5 py-1.5 rounded-2xl text-xs font-bold text-slate-800 flex items-center space-x-2 border border-slate-200/80 shadow-md">
           <ShieldCheck className="w-4 h-4 text-emerald-600 flex-shrink-0" />
-          <span>IMD Verified Grid</span>
+          <span>National Weather Grid</span>
           <span className="text-[10px] font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-            {events.filter(e => e.source === 'api' || e.verificationStatus === 'verified' || e.isImdCorroborated).length} Corroborated
+            {events.filter(e => {
+              const p = resolveDisplayPolicy(e);
+              return p === 'SHOW_VERIFIED' || p === 'SHOW_CORROBORATED';
+            }).length} Corroborated
           </span>
           {isOffline && (
             <span className="text-[10px] font-extrabold text-rose-900 bg-rose-100 px-2 py-0.5 rounded-full border border-rose-300 flex items-center space-x-1">
@@ -333,21 +291,27 @@ export const MapView: React.FC<MapViewProps> = ({
               <span>OFFLINE CACHE</span>
             </span>
           )}
-          {events.filter(e => e.verificationStatus === 'unverified' && !e.isImdCorroborated && e.source !== 'api').length > 0 && (
-            <button
-              onClick={() => setShowUnverifiedOnMap(!showUnverifiedOnMap)}
-              className={`text-[10px] font-bold px-2 py-0.5 rounded-full border transition-all cursor-pointer ${
-                showUnverifiedOnMap
-                  ? 'bg-amber-500 text-white border-amber-600 shadow-xs'
-                  : 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100'
-              }`}
-              title="Toggle display of unverified triage reports on map"
-            >
-              {showUnverifiedOnMap 
-                ? 'Hide Triage' 
-                : `+${events.filter(e => e.verificationStatus === 'unverified' && !e.isImdCorroborated && e.source !== 'api').length} in Triage`}
-            </button>
-          )}
+          {(() => {
+            const flaggedCount = events.filter(e => {
+              const p = resolveDisplayPolicy(e);
+              return p === 'HIDE_UNVERIFIED' || p === 'SHOW_CONTRADICTED';
+            }).length;
+            if (flaggedCount === 0) return null;
+            return (
+              <button
+                onClick={() => setShowUnverifiedOnMap(!showUnverifiedOnMap)}
+                className={`text-[10px] font-bold px-2 py-0.5 rounded-full border transition-all cursor-pointer flex items-center space-x-1 ${
+                  showUnverifiedOnMap
+                    ? 'bg-amber-500 text-white border-amber-600 shadow-xs'
+                    : 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100'
+                }`}
+                title="Toggle display of unverified and contradicted triage reports on map"
+              >
+                <AlertTriangle className="w-2.5 h-2.5" />
+                <span>{showUnverifiedOnMap ? 'Hide Flagged Layer' : `Flagged Layer (${flaggedCount})`}</span>
+              </button>
+            );
+          })()}
         </div>
 
         {/* Interactive Map Mode Layer Switcher */}
@@ -433,7 +397,8 @@ export const MapView: React.FC<MapViewProps> = ({
 
       {/* Map Legend (Bottom Left) */}
       <div className="absolute bottom-4 left-4 z-10 hidden sm:flex items-center space-x-3 bg-white/90 backdrop-blur-md px-4 py-2 rounded-2xl border border-slate-200 shadow-md text-xs font-medium text-slate-700">
-        <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Tap pin to change mood:</span>
+        <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Live Weather Indicators:</span>
+        <div className="flex items-center space-x-1"><span>☀️</span><span>Clear</span></div>
         <div className="flex items-center space-x-1"><span>🌧️</span><span>Rain</span></div>
         <div className="flex items-center space-x-1"><span>⚡</span><span>Storm</span></div>
         <div className="flex items-center space-x-1"><span>🌊</span><span>Flood</span></div>
@@ -442,6 +407,14 @@ export const MapView: React.FC<MapViewProps> = ({
         <div className="flex items-center space-x-1"><span>🌪️</span><span>Dust</span></div>
         <div className="flex items-center space-x-1"><span>💨</span><span>Wind</span></div>
       </div>
+
+      {/* Contradiction Audit Card Modal */}
+      {selectedContradictedEvent && (
+        <ContradictionCard
+          event={selectedContradictedEvent}
+          onClose={() => setSelectedContradictedEvent(null)}
+        />
+      )}
 
     </div>
   );

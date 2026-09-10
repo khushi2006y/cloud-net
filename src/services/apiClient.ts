@@ -218,7 +218,7 @@ export const apiClient = {
     return await res.json();
   },
 
-  // 9. Trigger SIH Demonstration Scenarios
+  // 9. Trigger Meteorological Integrity Demonstration Scenarios
   async triggerDemoScenario(scenarioId: string, params?: any): Promise<any> {
     let url = `${API_BASE}/demo/scenario/${scenarioId}`;
     if (params) {
@@ -237,6 +237,19 @@ export const apiClient = {
 
   // Internal mapper
   _mapBackendToClient(b: any): WeatherEvent {
+    const rawStatus = (b.status || b.verification?.status || b.verificationStatus || 'unverified').toLowerCase();
+    const status = (rawStatus === 'flagged' ? 'unverified' : rawStatus) as any;
+
+    const displayPolicy = b.display_policy || (
+      status === 'contradicted' ? 'SHOW_CONTRADICTED' :
+      status === 'stale' ? 'SHOW_STALE' :
+      status === 'duplicate' ? 'ATTACH_DUPLICATE' :
+      status === 'provisional' ? 'SHOW_PROVISIONAL' :
+      status === 'corroborated' ? 'SHOW_CORROBORATED' :
+      status === 'verified' ? 'SHOW_VERIFIED' :
+      'HIDE_UNVERIFIED'
+    );
+
     return {
       id: b.id,
       source: b.source?.type?.toLowerCase() || 'citizen',
@@ -250,12 +263,25 @@ export const apiClient = {
       severity: (b.severity?.toLowerCase() || 'medium') as any,
       title: b.title || `Weather alert in ${b.city || 'India'}`,
       description: b.text || b.description || '',
-      verificationStatus: (b.verification?.status?.toLowerCase() || b.verificationStatus?.toLowerCase() || 'unverified') as any,
-      confidenceScore: b.verification?.confidence ?? b.confidenceScore ?? 50,
+      verificationStatus: status,
+      confidenceScore: b.confidence ?? b.verification?.confidence ?? b.confidenceScore ?? 50,
       duplicateOf: b.processing?.duplicateOf,
       mediaUrl: b.media_url,
       evidence: b.evidence || [],
       auditLogs: b.audit_logs || [],
+
+      // Authoritative Backend Display & Truth Fields (Part 1 & 2)
+      display_policy: displayPolicy,
+      event_id: b.event_id || b.id,
+      event_type: b.event_type || b.category,
+      confidence: b.confidence ?? b.confidenceScore ?? 50,
+      status: status,
+      independent_sources: b.independent_sources ?? 1,
+      supporting_evidence: b.supporting_evidence || [],
+      contradicting_evidence: b.contradicting_evidence || [],
+      freshness: b.freshness || 'CURRENT',
+      duplicate_count: b.duplicate_count ?? (b.duplicateCount || 0),
+      is_simulated: b.is_simulated ?? false,
     } as any;
   },
 };

@@ -37,6 +37,7 @@ interface AnalyticsChartsProps {
 export const AnalyticsCharts: React.FC<AnalyticsChartsProps> = ({ events }) => {
   
   const categoriesList: EventCategory[] = [
+    'clear',
     'rainfall',
     'thunderstorm',
     'flooding',
@@ -50,8 +51,9 @@ export const AnalyticsCharts: React.FC<AnalyticsChartsProps> = ({ events }) => {
     events.filter(e => e.category === cat).length
   );
 
-  const categoryLabels = categoriesList.map(cat => CATEGORY_CONFIG[cat].label);
+  const categoryLabels = categoriesList.map(cat => CATEGORY_CONFIG[cat]?.label || cat);
   const categoryColors = [
+    '#0ea5e9', // clear
     '#0284c7', // rainfall
     '#7c3aed', // thunderstorm
     '#0369a1', // flooding
@@ -101,7 +103,9 @@ export const AnalyticsCharts: React.FC<AnalyticsChartsProps> = ({ events }) => {
   // Top Affected States (Horizontal Bar)
   const stateCounts: Record<string, number> = {};
   events.forEach(e => {
-    stateCounts[e.state] = (stateCounts[e.state] || 0) + 1;
+    if (e.state) {
+      stateCounts[e.state] = (stateCounts[e.state] || 0) + 1;
+    }
   });
 
   const sortedStates = Object.entries(stateCounts)
@@ -109,11 +113,11 @@ export const AnalyticsCharts: React.FC<AnalyticsChartsProps> = ({ events }) => {
     .slice(0, 6);
 
   const barData = {
-    labels: sortedStates.map(s => s[0]),
+    labels: sortedStates.length > 0 ? sortedStates.map(s => s[0]) : ['No State Data'],
     datasets: [
       {
         label: 'Weather Incidents Recorded',
-        data: sortedStates.map(s => s[1]),
+        data: sortedStates.length > 0 ? sortedStates.map(s => s[1]) : [0],
         backgroundColor: 'rgba(2, 132, 199, 0.75)',
         borderColor: '#0284c7',
         borderWidth: 1,
@@ -146,15 +150,25 @@ export const AnalyticsCharts: React.FC<AnalyticsChartsProps> = ({ events }) => {
     }
   };
 
-  // 24-Hour Incident Time-Series Trend
-  const timeLabels = ['00:00', '03:00', '06:00', '09:00', '12:00', '15:00', '18:00', '21:00'];
-  const trendData = [3, 5, 8, 14, 18, 22, 19, events.length];
+  // Real 24-Hour Incident Time-Series Trend
+  // Compute authentic counts partitioned into 3-hour windows over the last 24 hours
+  const now = Date.now();
+  const bucketHours = [21, 18, 15, 12, 9, 6, 3, 0];
+  const timeLabels = ['24h-21h', '21h-18h', '18h-15h', '15h-12h', '12h-9h', '9h-6h', '6h-3h', 'Last 3h'];
+  const trendData = bucketHours.map(h => {
+    const windowStart = now - (h + 3) * 60 * 60 * 1000;
+    const windowEnd = now - h * 60 * 60 * 1000;
+    return events.filter(e => {
+      const ts = new Date(e.timestamp).getTime();
+      return !isNaN(ts) && ts >= windowStart && ts < windowEnd;
+    }).length;
+  });
 
   const lineData = {
     labels: timeLabels,
     datasets: [
       {
-        label: 'Hourly Incident Ingestion Rate',
+        label: 'Observed Incident Reports',
         data: trendData,
         fill: true,
         borderColor: '#0284c7',
@@ -204,7 +218,7 @@ export const AnalyticsCharts: React.FC<AnalyticsChartsProps> = ({ events }) => {
             </h2>
           </div>
           <p className="text-xs text-slate-500 mt-1">
-            Real-time multi-source data visualization across 7 IMD categories and Indian states.
+            Real-time multi-source data visualization across national meteorological categories and Indian states.
           </p>
         </div>
 
@@ -214,6 +228,15 @@ export const AnalyticsCharts: React.FC<AnalyticsChartsProps> = ({ events }) => {
           </div>
         </div>
       </div>
+
+      {events.length === 0 && (
+        <div className="p-6 rounded-3xl bg-slate-50 border border-slate-200 text-center space-y-1.5">
+          <div className="text-sm font-bold text-slate-700">No Recent Events</div>
+          <p className="text-xs text-slate-500 max-w-md mx-auto">
+            No incident reports are currently logged in the active database. Analytics will populate automatically as telemetry is ingested.
+          </p>
+        </div>
+      )}
 
       {/* Grid of 3 Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">

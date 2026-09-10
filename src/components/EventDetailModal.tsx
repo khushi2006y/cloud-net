@@ -398,7 +398,7 @@ export const EventDetailModal: React.FC<EventDetailModalProps> = ({
               <div className="p-3 bg-sky-50 rounded-2xl border border-sky-200 text-[11px] text-sky-900 space-y-1">
                 <div className="font-bold flex items-center">
                   <Info className="w-3.5 h-3.5 mr-1 text-sky-700" />
-                  Evidence Fusion Scoring Model (SIH SafeGuard v2.4):
+                  Evidence Fusion Scoring Model (CloudNet SafeGuard v2.4):
                 </div>
                 <p className="text-slate-600 text-[10.5px] leading-relaxed">
                   Composite score = <code className="font-mono bg-white px-1 py-0.5 rounded text-sky-800">Σ(Supporting Weights) - Σ(Contradicting Weights) × Independence Factor (DAG)</code>. Threshold for automatic <strong className="text-emerald-700">VERIFIED</strong> is 70 points with zero physical invariant violations.

@@ -27,8 +27,18 @@ export const StatsOverview: React.FC<StatsOverviewProps> = ({ events }) => {
   const citizenCount = events.filter(e => e.source === 'citizen').length;
 
   const severeCount = events.filter(e => e.severity === 'severe' || e.severity === 'extreme').length;
-  const verifiedPct = total > 0 ? Math.round((verifiedCount / total) * 100) : 0;
   const affectedStatesCount = new Set(events.map(e => e.state)).size;
+
+  if (total === 0) {
+    return (
+      <div className="glass-card p-5 rounded-2xl mb-6 text-center text-slate-500 border border-slate-200 shadow-xs">
+        <div className="text-sm font-bold text-slate-800">No Recent Events</div>
+        <div className="text-xs text-slate-500 mt-0.5">
+          No incident reports currently logged in active database. Real-time telemetry monitoring is actively scanning national stations.
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
@@ -53,7 +63,7 @@ export const StatsOverview: React.FC<StatsOverviewProps> = ({ events }) => {
 
         {/* Breakdown by source */}
         <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-600">
-          <span className="flex items-center space-x-1" title="Twitter #IMD Posts">
+          <span className="flex items-center space-x-1" title="Twitter Meteorological Posts">
             <Twitter className="w-3.5 h-3.5 text-sky-600" />
             <span className="font-semibold">{twitterCount}</span>
             <span className="text-slate-400 text-[11px]">Tweets</span>
@@ -71,7 +81,7 @@ export const StatsOverview: React.FC<StatsOverviewProps> = ({ events }) => {
         </div>
       </div>
 
-      {/* Card 2: AI Verification Quality */}
+      {/* Card 2: Verification Quality */}
       <div className="glass-card glass-card-hover p-4 rounded-2xl">
         <div className="flex items-center justify-between mb-2">
           <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
@@ -83,9 +93,9 @@ export const StatsOverview: React.FC<StatsOverviewProps> = ({ events }) => {
         </div>
 
         <div className="flex items-baseline space-x-2">
-          <span className="text-3xl font-extrabold text-emerald-600 font-sans">{verifiedPct}%</span>
+          <span className="text-3xl font-extrabold text-emerald-600 font-sans">{verifiedCount}</span>
           <span className="text-xs text-slate-500 font-medium">
-            ({verifiedCount} Confirmed)
+            of {total} Verified
           </span>
         </div>
 

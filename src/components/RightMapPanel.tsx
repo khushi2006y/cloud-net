@@ -81,8 +81,13 @@ export const RightMapPanel: React.FC<RightMapPanelProps> = ({
     onSearch(cityQuery);
   };
 
-  const getWeatherIcon = (category: string) => {
+  const getWeatherIcon = (category: string, precipMm: number = 0) => {
+    if ((category === 'rainfall' || category === 'flooding') && precipMm === 0) {
+      return <Sun className="w-8 h-8 text-amber-500" />;
+    }
     switch (category) {
+      case 'clear':
+        return <Sun className="w-8 h-8 text-amber-500" />;
       case 'rainfall':
       case 'flooding':
         return <CloudRain className="w-8 h-8 text-sky-500 animate-bounce" />;
@@ -97,9 +102,13 @@ export const RightMapPanel: React.FC<RightMapPanelProps> = ({
     }
   };
 
-  const config = searchedWeather
-    ? CATEGORY_CONFIG[searchedWeather.category] || CATEGORY_CONFIG.rainfall
-    : CATEGORY_CONFIG.rainfall;
+  const effectiveCategory = searchedWeather
+    ? (searchedWeather.category === 'rainfall' || searchedWeather.category === 'flooding') && (searchedWeather.telemetry?.precipitationMm ?? 0) === 0
+      ? 'clear'
+      : searchedWeather.category
+    : 'clear';
+
+  const config = CATEGORY_CONFIG[effectiveCategory] || CATEGORY_CONFIG.clear || CATEGORY_CONFIG.rainfall;
 
   return (
     <div className="glass-card rounded-3xl overflow-hidden flex flex-col h-[560px] shadow-lg border border-white/80 bg-white/70 backdrop-blur-md">
@@ -283,7 +292,7 @@ export const RightMapPanel: React.FC<RightMapPanelProps> = ({
                       )}
                     </div>
                     <div className="p-2 rounded-2xl bg-white shadow-xs border border-slate-100">
-                      {getWeatherIcon(searchedWeather.category)}
+                      {getWeatherIcon(searchedWeather.category, searchedWeather.telemetry?.precipitationMm ?? 0)}
                     </div>
                   </div>
 
@@ -297,12 +306,13 @@ export const RightMapPanel: React.FC<RightMapPanelProps> = ({
                       <span>{config.label}</span>
                     </span>
                     <span className={`text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-md ${
+                      effectiveCategory === 'clear' ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' :
                       searchedWeather.severity === 'extreme' ? 'bg-purple-100 text-purple-900 border border-purple-200' :
                       searchedWeather.severity === 'severe' ? 'bg-rose-100 text-rose-900 border border-rose-200' :
                       searchedWeather.severity === 'moderate' ? 'bg-amber-100 text-amber-900 border border-amber-200' :
                       'bg-slate-100 text-slate-700'
                     }`}>
-                      {searchedWeather.severity} Alert
+                      {effectiveCategory === 'clear' ? 'Normal / Fair' : `${searchedWeather.severity} Alert`}
                     </span>
                   </div>
                 </div>

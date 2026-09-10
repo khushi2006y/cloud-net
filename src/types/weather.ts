@@ -1,4 +1,5 @@
 export type EventCategory = 
+  | 'clear'
   | 'rainfall'
   | 'thunderstorm'
   | 'flooding'
@@ -18,6 +19,15 @@ export type VerificationStatus =
   | 'corroborated'
   | 'contradicted'
   | 'stale';
+
+export type DisplayPolicy = 
+  | 'SHOW_VERIFIED'
+  | 'SHOW_CORROBORATED'
+  | 'SHOW_PROVISIONAL'
+  | 'HIDE_UNVERIFIED'
+  | 'SHOW_CONTRADICTED'
+  | 'ATTACH_DUPLICATE'
+  | 'SHOW_STALE';
 
 export type SeverityLevel = 'low' | 'moderate' | 'severe' | 'extreme';
 
@@ -138,6 +148,24 @@ export interface WeatherEvent {
     pressureHpa?: number;
     weatherCode?: number;
   };
+
+  // Authoritative Backend Display & Truth Fields (Part 1 & 2)
+  display_policy?: DisplayPolicy;
+  displayPolicy?: DisplayPolicy;
+  event_id?: string;
+  event_type?: string;
+  confidence?: number;
+  status?: VerificationStatus;
+  independent_sources?: number;
+  independentSources?: number;
+  supporting_evidence?: string[];
+  supportingEvidence?: string[];
+  contradicting_evidence?: string[];
+  contradictingEvidence?: string[];
+  freshness?: 'CURRENT' | 'STALE';
+  duplicate_count?: number;
+  is_simulated?: boolean;
+  isSimulated?: boolean;
 }
 
 export type SourceTrustLevel = 'official' | 'trusted_media' | 'verified_citizen' | 'unverified' | 'suspicious';
@@ -190,4 +218,7 @@ export interface ProcessingRuleResult {
     indicators: string[];
   };
   matchedKeywords: string[];
+  displayPolicy?: DisplayPolicy;
+  supportingEvidence?: string[];
+  contradictingEvidence?: string[];
 }

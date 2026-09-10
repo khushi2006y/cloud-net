@@ -97,6 +97,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
     filter.dateRange !== 'all';
 
   const categories: EventCategory[] = [
+    'clear',
     'rainfall',
     'thunderstorm',
     'flooding',

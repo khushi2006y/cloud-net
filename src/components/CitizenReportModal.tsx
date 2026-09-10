@@ -33,7 +33,7 @@ interface CitizenReportModalProps {
   prefilledLocation?: { city: string; state?: string; lat: number; lng: number } | null;
 }
 
-const PRESET_DEMO_PHOTOS = [
+const SAMPLE_PHOTO_PRESETS = [
   { label: 'Flooded Street', url: 'https://images.unsplash.com/photo-1547683905-f686c993aae5?w=600&auto=format&fit=crop&q=80' },
   { label: 'Heavy Downpour', url: 'https://images.unsplash.com/photo-1515694346937-94d85e41e6f0?w=600&auto=format&fit=crop&q=80' },
   { label: 'Lightning Storm', url: 'https://images.unsplash.com/photo-1605727216801-e27ce1d0cc28?w=600&auto=format&fit=crop&q=80' },
@@ -309,6 +309,7 @@ export const CitizenReportModal: React.FC<CitizenReportModalProps> = ({
   };
 
   const categories: EventCategory[] = [
+    'clear',
     'rainfall',
     'thunderstorm',
     'flooding',
@@ -600,8 +601,8 @@ export const CitizenReportModal: React.FC<CitizenReportModalProps> = ({
                     4. Photo Proof (Optional)
                   </label>
                   <div className="flex items-center space-x-1">
-                    <span className="text-[10px] text-slate-400 font-medium">Quick Demo:</span>
-                    {PRESET_DEMO_PHOTOS.map(p => (
+                    <span className="text-[10px] text-slate-400 font-medium">Sample Photos:</span>
+                    {SAMPLE_PHOTO_PRESETS.map(p => (
                       <button
                         type="button"
                         key={p.label}

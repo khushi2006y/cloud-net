@@ -135,6 +135,13 @@ export const LiveFeedList: React.FC<LiveFeedListProps> = ({
                   </div>
                 </div>
 
+                {/* Simulation Badge if synthetic */}
+                {event.is_simulated && (
+                  <div className="mb-1 inline-block px-1.5 py-0.2 rounded bg-amber-700 text-amber-100 text-[8px] font-black uppercase">
+                    SIMULATION DATA
+                  </div>
+                )}
+
                 {/* Title */}
                 <h4 className="text-xs font-bold text-slate-900 group-hover:text-sky-700 transition-colors line-clamp-1">
                   {event.title}
@@ -145,8 +152,13 @@ export const LiveFeedList: React.FC<LiveFeedListProps> = ({
                   {event.description}
                 </p>
 
+                {/* Confidence line */}
+                <div className="mt-1 text-[11px] text-slate-500 font-medium">
+                  Evidence Confidence: <strong>{Math.round(event.confidenceScore ?? 50)}/100</strong>
+                </div>
+
                 {/* Metadata & Footer */}
-                <div className="mt-2.5 flex items-center justify-between text-xs text-slate-500 pt-2 border-t border-slate-100">
+                <div className="mt-2 flex items-center justify-between text-xs text-slate-500 pt-2 border-t border-slate-100">
                   <div className="flex items-center space-x-2">
                     <span className="flex items-center font-bold text-slate-700">
                       <MapPin className="w-3.5 h-3.5 text-sky-600 mr-1" />

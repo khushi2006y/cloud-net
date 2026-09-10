@@ -10,15 +10,15 @@
 [![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)](https://docker.com/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-**CloudNet** is an autonomous, full-stack National Weather Big Data Analytics and Situational Awareness Platform developed for the **Smart India Hackathon (SIH 2026)**. It ingests high-velocity heterogeneous weather observations across India — from **official IMD bulletins**, **AWS IoT weather sensors**, **crowdsourced citizen reports**, and **multilingual social media streams** — subjecting every report to a **5-Gate Mathematical Safeguard Pipeline** and an **Explainable Evidence Fusion Ledger**.
+**CloudNet** is an autonomous, full-stack National Weather Big Data Analytics and Situational Awareness Platform. It ingests high-velocity heterogeneous weather observations across India — from **Open-Meteo Synoptic APIs**, **AWS IoT weather sensors**, **crowdsourced citizen reports**, and **multilingual social media streams** — subjecting every report to a **5-Gate Mathematical Safeguard Pipeline** and an **Explainable Evidence Fusion Ledger**.
 
 ---
 
 ## 📑 Table of Contents
 
 - [Architectural Overview](#-architectural-overview)
-- [Verification Safeguards (SIH 2026 Problem Statement)](#-verification-safeguards-sih-2026-problem-statement)
-- [SIH Demonstration Cockpit (Scenarios A through H)](#-sih-demonstration-cockpit-scenarios-a-through-h)
+- [Verification Safeguards](#-verification-safeguards)
+- [Meteorological Integrity Test Cockpit (Scenarios A through H)](#-meteorological-integrity-test-cockpit-scenarios-a-through-h)
 - [End-to-End System Architecture](#-end-to-end-system-architecture)
 - [Quickstart: Zero-Config Local Run](#-quickstart-zero-config-local-run)
 - [Production Deployment (Docker Compose)](#-production-deployment-docker-compose)
@@ -43,7 +43,7 @@ CloudNet solves the fundamental challenge of trust, deduplication, and corrobora
 
 ---
 
-## 🛡️ Verification Safeguards (SIH 2026 Problem Statement)
+## 🛡️ Verification Safeguards
 
 CloudNet mathematically neutralizes the three classical failure modes in multi-source intelligence:
 
@@ -65,9 +65,9 @@ CloudNet mathematically neutralizes the three classical failure modes in multi-s
 
 ---
 
-## 🎯 SIH Demonstration Cockpit (Scenarios A through H)
+## 🎯 Meteorological Integrity Test Cockpit (Scenarios A through H)
 
-The UI includes a **1-Click SIH Evaluation Cockpit** to demonstrate each safeguard in real time:
+The admin interface includes a **1-Click Integrity Verification Test Cockpit** to demonstrate each safeguard in real time:
 
 | Scenario | Name | Injected Challenge | System Reaction & Outcome |
 | :--- | :--- | :--- | :--- |
@@ -276,4 +276,4 @@ cloudnet/
 
 ## 📜 License
 
-This project is licensed under the **MIT License**. Developed for the **Smart India Hackathon (SIH 2026)**.
+This project is licensed under the **MIT License**. Enterprise Meteorological Intelligence & Disaster Safeguarding Platform.

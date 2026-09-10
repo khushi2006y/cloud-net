@@ -93,3 +93,32 @@ async def test_adversarial_scenarios_a_through_e():
         sc_h = await ac.post("/api/demo/scenario/H?count=50")
         assert sc_h.status_code == 200
         assert sc_h.json()["actual_processed"] > 0
+
+
+@pytest.mark.asyncio
+async def test_display_policy_contract():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        res = await ac.get("/api/events?limit=10")
+        assert res.status_code == 200
+        events = res.json()
+        assert isinstance(events, list)
+        valid_policies = {
+            "SHOW_VERIFIED",
+            "SHOW_CORROBORATED",
+            "SHOW_PROVISIONAL",
+            "HIDE_UNVERIFIED",
+            "SHOW_CONTRADICTED",
+            "ATTACH_DUPLICATE",
+            "SHOW_STALE"
+        }
+        for ev in events:
+            assert "display_policy" in ev, "Every event must include authoritative display_policy"
+            assert ev["display_policy"] in valid_policies, f"Invalid display_policy: {ev['display_policy']}"
+            assert "event_id" in ev
+            assert "confidence" in ev
+            assert "status" in ev
+            assert "supporting_evidence" in ev
+            assert "contradicting_evidence" in ev
+            assert "freshness" in ev
+            assert ev["freshness"] in ["CURRENT", "STALE"]

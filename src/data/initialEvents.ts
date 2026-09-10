@@ -25,16 +25,27 @@ export type { CityNode, DistrictNode } from '../config/india';
 // ─── Category Display Configuration ─────────────────────────────────────────
 
 export const CATEGORY_CONFIG: Record<EventCategory, CategoryMeta> = {
+  clear: {
+    id: 'clear',
+    label: 'Clear / Fair Sky',
+    emoji: '☀️',
+    color: '#0284c7',
+    bgHex: '#f0f9ff',
+    badgeBg: 'bg-sky-50 text-sky-800 border-sky-200',
+    badgeBorder: 'border-sky-300',
+    iconName: 'Sun',
+    description: 'Clear skies and normal atmospheric conditions'
+  },
   rainfall: {
     id: 'rainfall',
-    label: 'Heavy Rainfall',
+    label: 'Rainfall Spell',
     emoji: '🌧️',
     color: '#0284c7',
     bgHex: '#e0f2fe',
     badgeBg: 'bg-sky-100 text-sky-800 border-sky-200',
     badgeBorder: 'border-sky-300',
     iconName: 'CloudRain',
-    description: 'Continuous downpour >65mm in 24h'
+    description: 'Continuous downpour or passing precipitation'
   },
   thunderstorm: {
     id: 'thunderstorm',
@@ -117,6 +128,17 @@ export const MOOD_THEMES: Record<WeatherMood, MoodTheme> = {
     badgeText: 'text-slate-800',
     description: 'National overview mode. Tap any map pin to shift the mood.',
     headerSubtitle: 'National Meteorological Monitoring & Verification'
+  },
+  clear: {
+    id: 'clear',
+    label: 'Clear Skies',
+    emoji: '☀️',
+    bgGradient: 'from-sky-50 via-slate-50 to-blue-50/70',
+    accentColor: '#0284c7',
+    badgeBg: 'bg-white/80',
+    badgeText: 'text-slate-800',
+    description: 'Clear skies and normal atmospheric conditions.',
+    headerSubtitle: 'Clear Skies & Normal Atmospheric Conditions'
   },
   rainfall: {
     id: 'rainfall',

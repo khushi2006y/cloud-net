@@ -16,13 +16,15 @@ import {
   User,
   Download,
   Wifi,
-  WifiOff
+  WifiOff,
+  Info,
+  AlertTriangle
 } from 'lucide-react';
 import { WeatherMood } from '../types/weather';
 import { setAdminAuthState } from '../services/storage';
 import { useConnectivity } from '../services/connectivityService';
 
-export type ActiveTab = 'dashboard' | 'analytics' | 'admin' | 'feeds' | 'myreports';
+export type ActiveTab = 'dashboard' | 'alerts' | 'analytics' | 'reports' | 'sources' | 'about' | 'admin' | 'feeds' | 'myreports';
 
 interface SidebarProps {
   activeTab: ActiveTab;
@@ -49,8 +51,17 @@ const NAV_ITEMS = [
     activeText: 'text-sky-700',
   },
   {
+    id: 'alerts' as ActiveTab,
+    label: 'Alerts',
+    icon: ShieldAlert,
+    color: 'text-rose-500',
+    activeBg: 'bg-rose-50',
+    activeBar: 'bg-rose-500',
+    activeText: 'text-rose-700',
+  },
+  {
     id: 'analytics' as ActiveTab,
-    label: 'Charts & Stats',
+    label: 'Analytics',
     icon: BarChart3,
     color: 'text-indigo-500',
     activeBg: 'bg-indigo-50',
@@ -58,17 +69,17 @@ const NAV_ITEMS = [
     activeText: 'text-indigo-700',
   },
   {
-    id: 'admin' as ActiveTab,
-    label: 'Admin Verify',
-    icon: ShieldCheck,
-    color: 'text-emerald-500',
-    activeBg: 'bg-emerald-50',
-    activeBar: 'bg-emerald-500',
-    activeText: 'text-emerald-700',
+    id: 'reports' as ActiveTab,
+    label: 'Reports',
+    icon: ClipboardList,
+    color: 'text-violet-500',
+    activeBg: 'bg-violet-50',
+    activeBar: 'bg-violet-500',
+    activeText: 'text-violet-700',
   },
   {
-    id: 'feeds' as ActiveTab,
-    label: 'Data Feeds',
+    id: 'sources' as ActiveTab,
+    label: 'Sources',
     icon: Radio,
     color: 'text-amber-500',
     activeBg: 'bg-amber-50',
@@ -76,13 +87,13 @@ const NAV_ITEMS = [
     activeText: 'text-amber-700',
   },
   {
-    id: 'myreports' as ActiveTab,
-    label: 'My Reports',
-    icon: ClipboardList,
-    color: 'text-violet-500',
-    activeBg: 'bg-violet-50',
-    activeBar: 'bg-violet-500',
-    activeText: 'text-violet-700',
+    id: 'about' as ActiveTab,
+    label: 'About',
+    icon: Info,
+    color: 'text-teal-500',
+    activeBg: 'bg-teal-50',
+    activeBar: 'bg-teal-500',
+    activeText: 'text-teal-700',
   },
 ];
 
@@ -148,7 +159,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <Cloud className="w-4 h-4 stroke-[2.5]" />
             </div>
             <span className="font-bold text-slate-900 text-sm tracking-tight">CloudNet</span>
-            <span className="text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-sky-100 text-sky-800 border border-sky-200">IMD</span>
+            <span className="text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-sky-100 text-sky-800 border border-sky-200">Live</span>
           </button>
 
           <div className="flex items-center space-x-2">
@@ -280,6 +291,28 @@ export const Sidebar: React.FC<SidebarProps> = ({
           );
         })}
 
+        {/* Authenticated Admin Console Tab */}
+        {isAdminAuthenticated && (
+          <button
+            onClick={() => handleNavClick('admin')}
+            title={collapsed ? 'Admin Console' : undefined}
+            className={`
+              group relative w-full flex items-center rounded-xl text-left transition-all duration-150
+              ${collapsed ? 'justify-center px-0 py-2.5' : 'space-x-3 px-3 py-2.5'}
+              ${activeTab === 'admin'
+                ? 'bg-emerald-50 text-emerald-700 font-bold shadow-sm'
+                : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900 font-medium'}
+            `}
+          >
+            {activeTab === 'admin' && (
+              <span className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 rounded-r-full bg-emerald-500" />
+            )}
+            <ShieldCheck className={`w-4.5 h-4.5 shrink-0 ${activeTab === 'admin' ? 'text-emerald-600' : 'text-slate-400 group-hover:text-slate-600'}`} />
+            {!collapsed && <span className="text-xs truncate">Admin Console</span>}
+            <span className={`${collapsed ? 'absolute top-1.5 right-1.5' : 'ml-auto'} w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0`} />
+          </button>
+        )}
+
         {/* Divider */}
         <div className="mx-2 my-2 border-t border-slate-100" />
 
@@ -397,7 +430,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <span className={`text-[10px] font-bold uppercase tracking-wider ${
               connStatus === 'online' ? 'text-emerald-700' : connStatus === 'degraded' ? 'text-amber-700' : 'text-rose-700'
             }`}>
-              {connStatus === 'online' ? 'Online • IMD Grid' : connStatus === 'degraded' ? 'Degraded Network' : 'Offline Emergency'}
+              {connStatus === 'online' ? 'Online • Open-Meteo & Grid' : connStatus === 'degraded' ? 'Degraded Network' : 'Offline Emergency'}
             </span>
           </div>
         ) : (
@@ -465,9 +498,9 @@ const MobileSidebarContent: React.FC<MobileContentProps> = ({
         <div>
           <div className="flex items-center space-x-1.5">
             <span className="text-sm font-bold text-slate-900">CloudNet</span>
-            <span className="text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-sky-100 text-sky-800 border border-sky-200">IMD Grid</span>
+            <span className="text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-sky-100 text-sky-800 border border-sky-200">Live Grid</span>
           </div>
-          <p className="text-[10px] text-slate-400 font-medium">Meteorological Monitor</p>
+          <p className="text-[10px] text-slate-400 font-medium">Meteorological Intelligence</p>
         </div>
       </div>
       <button onClick={onClose} className="p-1.5 rounded-xl hover:bg-slate-100 text-slate-400">
@@ -490,12 +523,22 @@ const MobileSidebarContent: React.FC<MobileContentProps> = ({
             {isActive && <span className={`absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 rounded-r-full ${item.activeBar}`} />}
             <Icon className={`w-4.5 h-4.5 shrink-0 ${isActive ? item.color : 'text-slate-400'}`} />
             <span className="flex-1">{item.label}</span>
-            {item.id === 'admin' && isAdminAuthenticated && (
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-            )}
           </button>
         );
       })}
+
+      {isAdminAuthenticated && (
+        <button
+          onClick={() => onNavClick('admin')}
+          className={`relative w-full flex items-center space-x-3 px-3 py-3 rounded-xl text-left transition-all font-medium text-xs
+            ${activeTab === 'admin' ? 'bg-emerald-50 text-emerald-700 font-bold shadow-sm' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'}`}
+        >
+          {activeTab === 'admin' && <span className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 rounded-r-full bg-emerald-500" />}
+          <ShieldCheck className="w-4.5 h-4.5 shrink-0 text-emerald-600" />
+          <span className="flex-1">Admin Console</span>
+          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+        </button>
+      )}
 
       <div className="mx-2 my-2 border-t border-slate-100" />
 

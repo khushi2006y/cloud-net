@@ -33,16 +33,48 @@ export function getStoredEvents(): WeatherEvent[] {
   try {
     const data = localStorage.getItem(STORAGE_KEY);
     if (!data) {
-      // Cold start — no seed data. Return empty array.
-      // App.tsx will trigger a live Open-Meteo sync to populate.
       inMemoryEventsCache = [];
       return [];
     }
     const parsed: WeatherEvent[] = JSON.parse(data);
-    inMemoryEventsCache = parsed;
+    
+    // Automatic Real-Data Sanitation: Clean out any legacy dummy/mock/spam events
+    const cleanLiveEvents: WeatherEvent[] = [];
+    const seenCityApi = new Set<string>();
+
+    for (const e of parsed) {
+      const isDummy = 
+        e.id.includes('evt-bigdata-') ||
+        e.id.startsWith('temp-city-') ||
+        (e.sourceAuthor && (e.sourceAuthor.startsWith('User_') || e.sourceAuthor.startsWith('SpamBot_') || e.sourceAuthor.startsWith('TrollAccount_'))) ||
+        e.title?.startsWith('Social report:') ||
+        e.title?.startsWith('Special Promo:') ||
+        e.verificationStatus === 'duplicate';
+
+      if (isDummy) continue;
+
+      // Deduplicate API city synops so each city has strictly 1 live event
+      if (e.source === 'api') {
+        const cityKey = e.city.toLowerCase().trim();
+        if (seenCityApi.has(cityKey)) continue;
+        seenCityApi.add(cityKey);
+      }
+
+      cleanLiveEvents.push(e);
+    }
+
+    inMemoryEventsCache = cleanLiveEvents;
     globalSpatialGrid.clear();
-    globalSpatialGrid.insertBatch(parsed);
-    return parsed;
+    globalSpatialGrid.insertBatch(cleanLiveEvents);
+    
+    // If dummy data was pruned, update localStorage immediately
+    if (cleanLiveEvents.length !== parsed.length) {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(cleanLiveEvents));
+      } catch {}
+    }
+
+    return cleanLiveEvents;
   } catch (e) {
     console.error('Failed to parse stored events, starting fresh:', e);
     inMemoryEventsCache = [];
@@ -57,8 +89,6 @@ export function saveEvents(events: WeatherEvent[]): void {
   globalSpatialGrid.insertBatch(events);
 
   try {
-    // If dataset exceeds localStorage limits, persist newest 1000 items;
-    // full dataset stays in-memory and in the spatial index.
     const serializable = events.length > 1000 ? events.slice(0, 1000) : events;
     localStorage.setItem(STORAGE_KEY, JSON.stringify(serializable));
   } catch (e) {
@@ -71,9 +101,33 @@ export function saveEvents(events: WeatherEvent[]): void {
 
 export function batchAddEvents(newEvents: WeatherEvent[]): WeatherEvent[] {
   const current = getStoredEvents();
-  const merged = [...newEvents, ...current];
+  const eventMap = new Map<string, WeatherEvent>();
+
+  // Add existing clean events
+  for (const e of current) {
+    const key = e.source === 'api' ? `api-city-${e.city.toLowerCase().trim()}` : e.id;
+    eventMap.set(key, e);
+  }
+
+  // Upsert new live telemetry (fresh readings replace older city readings)
+  for (const ne of newEvents) {
+    const key = ne.source === 'api' ? `api-city-${ne.city.toLowerCase().trim()}` : ne.id;
+    eventMap.set(key, ne);
+  }
+
+  const merged = Array.from(eventMap.values()).sort(
+    (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+  );
+
   saveEvents(merged);
   return merged;
+}
+
+export function purgeAllMockAndSyncLive(): void {
+  localStorage.removeItem(STORAGE_KEY);
+  inMemoryEventsCache = [];
+  globalSpatialGrid.clear();
+  window.dispatchEvent(new CustomEvent('cloudnet_events_updated', { detail: [] }));
 }
 
 export function addEventWithProcessing(
@@ -117,25 +171,39 @@ export function addEventWithProcessing(
     aiClassificationConfidence: ruleResult.confidence,
     matchedKeywords: ruleResult.matchedKeywords,
     aiFakeDetection: ruleResult.aiFakeDetection,
-    flagReason: ruleResult.flagReason,
+    flagReason: ruleResult.flagReason || ruleResult.autoDeleteReason,
     mergedWithId: ruleResult.matchedEventId,
-    duplicateCount: ruleResult.isDuplicate ? 1 : 0
+    duplicateCount: ruleResult.isDuplicate ? 1 : 0,
+    displayPolicy: ruleResult.displayPolicy,
+    display_policy: ruleResult.displayPolicy,
+    supportingEvidence: ruleResult.supportingEvidence,
+    supporting_evidence: ruleResult.supportingEvidence,
+    contradictingEvidence: ruleResult.contradictingEvidence,
+    contradicting_evidence: ruleResult.contradictingEvidence,
+    isContradictory: ruleResult.initialStatus === 'contradicted' || ruleResult.displayPolicy === 'SHOW_CONTRADICTED'
   };
 
-  // If contradictory, automatically delete/reject immediately: DO NOT SAVE TO DATABASE!
-  if (ruleResult.shouldAutoDelete) {
+  // If contradictory, retain in storage as contradicted/quarantined (display_policy = SHOW_CONTRADICTED)
+  // so analysts/citizens can audit the contradiction card if they opt into the Flagged Reports Layer
+  if (ruleResult.shouldAutoDelete || ruleResult.initialStatus === 'contradicted' || ruleResult.displayPolicy === 'SHOW_CONTRADICTED') {
+    const contradictedEvent: WeatherEvent = {
+      ...fullEvent,
+      verificationStatus: 'contradicted',
+      displayPolicy: 'SHOW_CONTRADICTED',
+      display_policy: 'SHOW_CONTRADICTED',
+      isContradictory: true,
+      flagReason: ruleResult.autoDeleteReason || ruleResult.flagReason || 'Atmospheric telemetry contradicts report'
+    };
+    const updatedList = [contradictedEvent, ...currentEvents];
+    saveEvents(updatedList);
     return {
-      event: {
-        ...fullEvent,
-        isContradictory: true,
-        verificationStatus: 'flagged'
-      },
+      event: contradictedEvent,
       isDuplicate: false,
       isFlagged: true,
       isContradictory: true,
-      isDeleted: true,
-      deleteReason: ruleResult.autoDeleteReason || ruleResult.flagReason,
-      flagReason: ruleResult.autoDeleteReason || ruleResult.flagReason
+      isDeleted: false,
+      deleteReason: undefined,
+      flagReason: contradictedEvent.flagReason
     };
   }
 

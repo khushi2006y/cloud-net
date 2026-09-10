@@ -1,8 +1,9 @@
 import re
 from typing import Dict, Any, List, Tuple
 
-# Official 8 IMD/CloudNet meteorological categories
+# Official 9 IMD/CloudNet meteorological categories
 CATEGORIES = [
+    "clear",
     "rainfall",
     "heavy_rainfall",
     "thunderstorm",
@@ -16,6 +17,9 @@ CATEGORIES = [
 
 # Layer 1: Rule-Based Dictionary (English + Indian Regional / Hindi Dialect Terminology)
 CATEGORY_LEXICON: Dict[str, List[str]] = {
+    "clear": [
+        "clear", "sunny", "fair", "clear sky", "clear skies", "pleasant", "normal", "calm", "dry"
+    ],
     "rainfall": [
         "rain", "rainfall", "downpour", "precipitation", "drizzle", "shower", "showers",
         "barish", "monsoon", "wet", "puddle", "cloudburst", "deluge", "torrential", "barsaat"
@@ -169,7 +173,7 @@ class LayeredNLPClassifier:
         max_score = scores[best_category]
 
         if max_score == 0:
-            return "rainfall", 45.0, []
+            return "clear", 50.0, []
 
         confidence = min(95.0, 50.0 + (max_score * 8.0))
         return best_category, confidence, matched[best_category]

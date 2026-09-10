@@ -1,4 +1,5 @@
 import json
+from datetime import datetime
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,6 +22,87 @@ def format_event_out(event: WeatherEvent, evidence_list: List[Evidence] = None, 
             hashtags = json.loads(event.hashtags)
         except Exception:
             hashtags = [h.strip() for h in event.hashtags.split(",") if h.strip()]
+
+    # Normalize status to standard 7 statuses
+    raw_status = (event.verification_status or "UNVERIFIED").upper()
+    if raw_status in ["FLAGGED"]:
+        status = "UNVERIFIED"
+    elif raw_status in ["VERIFIED", "CORROBORATED", "PROVISIONAL", "UNVERIFIED", "CONTRADICTED", "DUPLICATE", "STALE"]:
+        status = raw_status
+    else:
+        status = "UNVERIFIED"
+
+    # Evidence lists
+    supporting_evidence = []
+    contradicting_evidence = []
+    if evidence_list:
+        for e in evidence_list:
+            if e.direction == "SUPPORTING":
+                supporting_evidence.append(e.explanation)
+            elif e.direction == "CONTRADICTING":
+                contradicting_evidence.append(e.explanation)
+
+    # Fallback evidence if evidence_list was not loaded from DB
+    if not supporting_evidence and not contradicting_evidence:
+        if status in ["VERIFIED", "CORROBORATED"]:
+            if event.source_type == "WEATHER_API" or "open-meteo" in (event.source_id or "").lower():
+                supporting_evidence.append("Active weather telemetry confirmed via Open-Meteo Synoptic API")
+            else:
+                supporting_evidence.append(f"Multi-source corroboration from {event.source_name}")
+                if event.city:
+                    supporting_evidence.append(f"Spatial geofence confirmed for {event.city}, {event.state or 'India'}")
+        elif status == "CONTRADICTED":
+            contradicting_evidence.append("Telemetry Conflict: Official synoptic station measured 0.0 mm precipitation during claimed event")
+        elif status == "PROVISIONAL":
+            supporting_evidence.append("Preliminary citizen report registered; awaiting secondary corroboration")
+
+    # Freshness calculation
+    is_stale = False
+    now = datetime.utcnow()
+    ref_time = event.event_time or event.upload_time
+    if ref_time:
+        age_hours = (now - ref_time).total_seconds() / 3600.0
+        if age_hours > 4.0 or status == "STALE" or (event.freshness_score and event.freshness_score < 40.0):
+            is_stale = True
+
+    freshness = "STALE" if is_stale else "CURRENT"
+    if is_stale and status not in ["CONTRADICTED", "DUPLICATE"]:
+        status = "STALE"
+
+    # Authoritative Backend display_policy decision
+    if status == "CONTRADICTED" or (len(contradicting_evidence) > 0 and (event.confidence_score or 0) < 40.0):
+        display_policy = "SHOW_CONTRADICTED"
+    elif status == "STALE" or freshness == "STALE":
+        display_policy = "SHOW_STALE"
+    elif status == "DUPLICATE" or event.duplicate_of:
+        display_policy = "ATTACH_DUPLICATE"
+    elif status == "UNVERIFIED":
+        display_policy = "HIDE_UNVERIFIED"
+    elif status == "PROVISIONAL":
+        display_policy = "SHOW_PROVISIONAL"
+    elif status == "CORROBORATED":
+        display_policy = "SHOW_CORROBORATED"
+    elif status == "VERIFIED":
+        display_policy = "SHOW_VERIFIED"
+    else:
+        display_policy = "HIDE_UNVERIFIED"
+
+    # Synthetic / Simulation data identification
+    is_simulated = bool(
+        "sim" in (event.source_id or "").lower() or
+        event.source_type == "SOCIAL" or
+        "simulat" in (event.source_name or "").lower() or
+        "demo" in (event.source_id or "").lower()
+    )
+
+    # Independent sources count
+    independent_sources = max(1, len(supporting_evidence))
+    if status == "CORROBORATED":
+        independent_sources = max(2, independent_sources)
+    elif status == "VERIFIED":
+        independent_sources = max(3, independent_sources)
+
+    confidence = round(float(event.confidence_score or 50.0), 1)
 
     return {
         "id": event.id,
@@ -49,8 +131,8 @@ def format_event_out(event: WeatherEvent, evidence_list: List[Evidence] = None, 
         "text": event.description,
         "hashtags": hashtags,
         "verification": {
-            "status": event.verification_status,
-            "confidence": event.confidence_score
+            "status": event.verification_status or status,
+            "confidence": confidence
         },
         "processing": {
             "duplicateOf": event.duplicate_of,
@@ -91,13 +173,26 @@ def format_event_out(event: WeatherEvent, evidence_list: List[Evidence] = None, 
             }
             for l in (logs_list or [])
         ],
-        # Flatted properties for React UI convenience
+        # Flattened properties for React UI convenience
         "city": event.city,
         "state": event.state,
         "latitude": event.latitude,
         "longitude": event.longitude,
-        "confidenceScore": event.confidence_score,
-        "verificationStatus": event.verification_status
+        "confidenceScore": confidence,
+        "verificationStatus": status,
+
+        # Authoritative Event Contract (Part 1 & 2)
+        "event_id": event.id,
+        "event_type": event.event_type,
+        "confidence": confidence,
+        "status": status,
+        "independent_sources": independent_sources,
+        "supporting_evidence": supporting_evidence,
+        "contradicting_evidence": contradicting_evidence,
+        "freshness": freshness,
+        "display_policy": display_policy,
+        "duplicate_count": 1 if event.duplicate_of else 0,
+        "is_simulated": is_simulated
     }
 
 

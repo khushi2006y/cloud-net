@@ -63,6 +63,19 @@ class WeatherEventOut(BaseModel):
     confidenceScore: Optional[float] = None
     verificationStatus: Optional[str] = None
 
+    # Authoritative Event Contract (Part 1 & 2)
+    event_id: str
+    event_type: str
+    confidence: float
+    status: str
+    independent_sources: int = 1
+    supporting_evidence: List[str] = []
+    contradicting_evidence: List[str] = []
+    freshness: str = "CURRENT"
+    display_policy: str  # SHOW_VERIFIED, SHOW_CORROBORATED, SHOW_PROVISIONAL, HIDE_UNVERIFIED, SHOW_CONTRADICTED, ATTACH_DUPLICATE, SHOW_STALE
+    duplicate_count: int = 0
+    is_simulated: bool = False
+
 
 class EventOverrideRequest(BaseModel):
     new_status: str

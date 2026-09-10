@@ -4,10 +4,12 @@ import {
   Users, 
   Database,
   CheckCircle2,
-  RefreshCw
+  RefreshCw,
+  AlertTriangle
 } from 'lucide-react';
 import { Twitter } from './icons/TwitterIcon';
 import { WeatherEvent } from '../types/weather';
+import { formatEvidenceConfidence } from './EventMarker';
 
 interface MultiSourceFeedsViewProps {
   events: WeatherEvent[];
@@ -37,7 +39,7 @@ export const MultiSourceFeedsView: React.FC<MultiSourceFeedsViewProps> = ({
             </h2>
           </div>
           <p className="text-xs text-slate-500 mt-1">
-            ETL pipeline collecting unstructured weather reports from Twitter #IMD, Open-Meteo API & citizen submissions.
+            ETL pipeline ingesting meteorological observations from Twitter stream, Open-Meteo Synoptic API & citizen submissions.
           </p>
         </div>
 
@@ -47,7 +49,7 @@ export const MultiSourceFeedsView: React.FC<MultiSourceFeedsViewProps> = ({
             className="flex items-center space-x-1.5 px-3 py-2 rounded-xl bg-white hover:bg-sky-50 text-slate-700 hover:text-sky-700 border border-slate-200 transition-all cursor-pointer shadow-xs"
           >
             <Twitter className="w-3.5 h-3.5 text-sky-500" />
-            <span>Poll Twitter #IMD</span>
+            <span>Poll Twitter Feed</span>
           </button>
 
           <button
@@ -72,7 +74,7 @@ export const MultiSourceFeedsView: React.FC<MultiSourceFeedsViewProps> = ({
               </div>
               <div>
                 <h3 className="text-xs font-bold text-slate-900">Twitter / X Stream</h3>
-                <span className="text-[10px] text-sky-700 font-mono font-semibold">#IMD #WeatherAlert</span>
+                <span className="text-[10px] text-sky-700 font-mono font-semibold">#WeatherAlert #CitizenReport</span>
               </div>
             </div>
             <span className="text-xs font-bold font-mono text-slate-600 bg-slate-100 px-2 py-0.5 rounded-full">
@@ -83,6 +85,11 @@ export const MultiSourceFeedsView: React.FC<MultiSourceFeedsViewProps> = ({
           <div className="flex-1 overflow-y-auto space-y-2.5 pt-3 pr-1 divide-y divide-slate-50">
             {twitterEvents.map(t => (
               <div key={t.id} className="p-3 rounded-2xl bg-white border border-slate-100 text-xs space-y-1.5 shadow-xs">
+                {t.is_simulated && (
+                  <div className="inline-block px-1.5 py-0.2 rounded bg-amber-700 text-amber-100 text-[8px] font-black uppercase">
+                    SIMULATION DATA
+                  </div>
+                )}
                 <div className="flex items-center justify-between text-xs">
                   <span className="font-bold text-sky-700">{t.sourceAuthor}</span>
                   <span className="text-[10px] text-slate-400 font-mono">
@@ -92,7 +99,9 @@ export const MultiSourceFeedsView: React.FC<MultiSourceFeedsViewProps> = ({
                 <p className="text-slate-600 text-xs line-clamp-2 leading-relaxed">{t.description}</p>
                 <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1 border-t border-slate-100">
                   <span>📍 {t.city}, {t.state}</span>
-                  <span className="text-sky-700 font-mono font-bold">Confidence: {t.confidenceScore}%</span>
+                  <span className="text-sky-800 font-medium">
+                    {formatEvidenceConfidence(t.confidenceScore ?? 50, t.verificationStatus)}
+                  </span>
                 </div>
               </div>
             ))}

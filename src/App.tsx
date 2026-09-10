@@ -22,6 +22,8 @@ import { HyperlocalWeatherBar } from './components/HyperlocalWeatherBar';
 import { MyReports } from './components/MyReports';
 import { OfflineEmergencyBanner } from './components/OfflineEmergencyBanner';
 import { PrepareOfflineModal } from './components/PrepareOfflineModal';
+import { AlertsView } from './components/AlertsView';
+import { AboutView } from './components/AboutView';
 
 import { WeatherEvent, FilterState, WeatherMood, EventCategory } from './types/weather';
 import { MOOD_THEMES } from './data/initialEvents';
@@ -308,7 +310,7 @@ export const App: React.FC = () => {
       const cityData = MAJOR_INDIAN_CITIES.find(c => c.name.toLowerCase() === cityName.toLowerCase());
       if (cityData) {
         setSelectedEvent({
-          id: `temp-city-${cityName}`,
+          id: `city-focus-${cityName}`,
           source: 'api',
           sourceAuthor: 'IMD Observation',
           timestamp: new Date().toISOString(),
@@ -316,12 +318,12 @@ export const App: React.FC = () => {
           state: cityData.state,
           latitude: cityData.lat,
           longitude: cityData.lng,
-          category: 'rainfall',
-          severity: 'moderate',
-          title: `Weather Status for ${cityData.name}`,
-          description: `Observation center located in ${cityData.name}, ${cityData.state}.`,
+          category: 'clear',
+          severity: 'low',
+          title: `Weather Observation in ${cityData.name}`,
+          description: `IMD meteorological synoptic station in ${cityData.name}, ${cityData.state}.`,
           verificationStatus: 'verified',
-          confidenceScore: 90
+          confidenceScore: 98
         });
       }
     }
@@ -575,9 +577,6 @@ export const App: React.FC = () => {
               {/* KPI Stats Overview (Hidden in Minimal Emergency View) */}
               {!isEmergencyView && <StatsOverview events={events} />}
 
-              {/* Testbed Live Ingestion Toolbar (Hidden in Minimal Emergency View) */}
-              {!isEmergencyView && <SimulationControls onNewEvent={handleNewEvent} />}
-
               {/* Filter Bar with 7 Categories & Search (Hidden in Minimal Emergency View) */}
               {!isEmergencyView && (
                 <FilterBar
@@ -627,32 +626,38 @@ export const App: React.FC = () => {
             </div>
           )}
 
-          {/* View 2: Analytics & Trends */}
+          {/* View: Critical Weather Alerts */}
+          {activeTab === 'alerts' && (
+            <AlertsView
+              events={events}
+              onSelectEvent={handleSelectEvent}
+              onOpenDetails={(e) => setInspectedEvent(e)}
+              onOpenReportModal={() => setIsCitizenModalOpen(true)}
+              onOpenHelplinesModal={() => setIsHelplinesModalOpen(true)}
+            />
+          )}
+
+          {/* View: Analytics & Trends */}
           {activeTab === 'analytics' && (
             <AnalyticsCharts events={events} />
           )}
 
-          {/* View 3: Admin Moderation Console */}
-          {activeTab === 'admin' && (
-            <AdminPanel
-              events={events}
-              setEvents={setEvents}
-              isAdminAuthenticated={isAdminAuthenticated}
-              setIsAdminAuthenticated={setIsAdminAuthenticated}
-              onOpenLoginModal={() => setIsAdminLoginModalOpen(true)}
+          {/* View: Citizen Reports & Triage Status */}
+          {(activeTab === 'reports' || activeTab === 'myreports') && (
+            <MyReports
+              onOpenCitizenModal={() => setIsCitizenModalOpen(true)}
               onInspectEvent={(e) => setInspectedEvent(e)}
             />
           )}
 
-          {/* View 4: Multi-Source Feeds Pipeline */}
-          {activeTab === 'feeds' && (
+          {/* View: Observational Sources & Synoptic Feeds */}
+          {(activeTab === 'sources' || activeTab === 'feeds') && (
             <MultiSourceFeedsView
               events={events}
-              onTriggerTweet={() => {
-                // Dynamic: generates a random-city tweet — no hardcoded city/coords
-                const tweet = generateSimulatedTweet();
+              onTriggerTweet={async () => {
+                const tweet = await generateSimulatedTweet();
                 const res = addEventWithProcessing(tweet);
-                handleNewEvent(res.event, `Twitter #IMD Ingestion: ${res.event.city}`);
+                handleNewEvent(res.event, `Twitter / Meteorological Stream: ${res.event.city}`);
               }}
               onTriggerApiFetch={async () => {
                 const randomCity = getRandomIndianCity();
@@ -665,12 +670,26 @@ export const App: React.FC = () => {
             />
           )}
 
-          {/* View 5: My Reports — user's personal submission history */}
-          {activeTab === 'myreports' && (
-            <MyReports
-              onOpenCitizenModal={() => setIsCitizenModalOpen(true)}
-              onInspectEvent={(e) => setInspectedEvent(e)}
-            />
+          {/* View: Architecture & Truth-Aware Policy */}
+          {activeTab === 'about' && (
+            <AboutView />
+          )}
+
+          {/* View: Admin Moderation Console & Simulation Suite */}
+          {activeTab === 'admin' && (
+            <div className="space-y-6">
+              {isAdminAuthenticated && (
+                <SimulationControls onNewEvent={handleNewEvent} />
+              )}
+              <AdminPanel
+                events={events}
+                setEvents={setEvents}
+                isAdminAuthenticated={isAdminAuthenticated}
+                setIsAdminAuthenticated={setIsAdminAuthenticated}
+                onOpenLoginModal={() => setIsAdminLoginModalOpen(true)}
+                onInspectEvent={(e) => setInspectedEvent(e)}
+              />
+            </div>
           )}
 
         </main>
@@ -681,10 +700,10 @@ export const App: React.FC = () => {
             <div className="flex items-center space-x-2">
               <span className="font-bold text-slate-900">CloudNet</span>
               <span>•</span>
-              <span>National Weather Observation & AI Verification Platform</span>
+              <span>National Weather Observation & Evidence Verification Platform</span>
             </div>
             <div>
-              Data Sources: Open-Meteo API • Twitter / X Stream #IMD • Citizen Crowdsourcing
+              Data Sources: Open-Meteo Synoptic API • Meteorological Social Stream • Community Weather Spotters
             </div>
           </div>
         </footer>

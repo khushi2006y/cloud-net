@@ -178,12 +178,12 @@ def evaluate_event_evidence(
                         "evidence_type": "TELEMETRY",
                         "direction": "SUPPORTING",
                         "score": 15.0,
-                        "explanation": f"Synoptic Sensor Corroboration: Nearby station recorded active precipitation ({rain} mm)."
+                        "explanation": f"Open-Meteo Telemetry Corroboration: Nearby station recorded active precipitation ({rain} mm)."
                     })
                     telemetry_score = 95.0
                 elif rain is not None and rain == 0.0:
                     is_contradictory = True
-                    contradiction_reason = "Telemetry Conflict: Official synoptic station in proximity measured 0.0 mm precipitation during claimed flood."
+                    contradiction_reason = "Open-Meteo Telemetry Conflict: Official station in proximity measured 0.0 mm precipitation during claimed flood."
                     evidence_items.append({
                         "evidence_type": "TELEMETRY",
                         "direction": "CONTRADICTING",
@@ -198,7 +198,7 @@ def evaluate_event_evidence(
                         "evidence_type": "TELEMETRY",
                         "direction": "SUPPORTING",
                         "score": 15.0,
-                        "explanation": f"Synoptic Sensor Corroboration: Severe surface heat ({temp}°C) recorded by regional AWS."
+                        "explanation": f"Open-Meteo Telemetry Corroboration: Severe surface heat ({temp}°C) recorded by regional station."
                     })
                     telemetry_score = 95.0
 

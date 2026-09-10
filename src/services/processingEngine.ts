@@ -1,4 +1,4 @@
-import { WeatherEvent, EventCategory, ProcessingRuleResult, VerificationStatus, SourceTrustLevel, ReportSource } from '../types/weather';
+import { WeatherEvent, EventCategory, ProcessingRuleResult, VerificationStatus, SourceTrustLevel, ReportSource, DisplayPolicy } from '../types/weather';
 
 // Haversine distance calculation in Kilometers
 export function calculateDistanceKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
@@ -15,8 +15,11 @@ export function calculateDistanceKm(lat1: number, lon1: number, lat2: number, lo
   return R * c;
 }
 
-// Category keyword dictionary for NLP classification across 7 IMD categories
+// Category keyword dictionary for NLP classification across official IMD categories
 export const CATEGORY_KEYWORDS: Record<EventCategory, string[]> = {
+  clear: [
+    'clear', 'sunny', 'fair', 'pleasant', 'normal', 'calm', 'clear sky', 'clear skies', 'dry', 'sunshine'
+  ],
   rainfall: [
     'rain', 'rainfall', 'downpour', 'precipitation', 'drizzle', 'shower', 'showers', 
     'heavy rain', 'monsoon', 'barish', 'torrential', 'deluge', 'cloudburst', 'wet', 'puddle'
@@ -93,6 +96,7 @@ export function classifyEventCategory(text: string): {
 } {
   const lower = text.toLowerCase();
   const scores: Record<EventCategory, number> = {
+    clear: 0,
     rainfall: 0,
     thunderstorm: 0,
     flooding: 0,
@@ -119,7 +123,7 @@ export function classifyEventCategory(text: string): {
   }
 
   // Find category with highest score
-  let bestCategory: EventCategory = 'rainfall';
+  let bestCategory: EventCategory = 'clear';
   let maxScore = -1;
 
   for (const [cat, score] of Object.entries(scores)) {
@@ -130,7 +134,7 @@ export function classifyEventCategory(text: string): {
   }
 
   if (totalMatches === 0 || maxScore === 0) {
-    return { category: 'rainfall', confidence: 45, matchedKeywords: [] };
+    return { category: 'clear', confidence: 60, matchedKeywords: [] };
   }
 
   const confidence = Math.min(99, Math.round(55 + (maxScore / Math.max(1, totalMatches)) * 42));
@@ -352,6 +356,132 @@ export function evaluateSourceTrust(
 }
 
 /**
+ * Cross-checks a candidate weather report against the nearest cached Open-Meteo station telemetry.
+ * Station confirms -> raise confidence and add to supportingEvidence.
+ * Station contradicts -> lower confidence and add to contradictingEvidence.
+ * No station nearby -> leave neutral, do not penalize.
+ */
+export interface TelemetryCrossCheckResult {
+  hasStationNearby: boolean;
+  stationName?: string;
+  distanceKm?: number;
+  confirms: boolean;
+  contradicts: boolean;
+  confidenceDelta: number;
+  supportingReason?: string;
+  contradictingReason?: string;
+}
+
+export function crossCheckAgainstTelemetry(
+  lat: number,
+  lng: number,
+  category: EventCategory,
+  existingEvents: WeatherEvent[]
+): TelemetryCrossCheckResult {
+  const stations = existingEvents.filter(e => (e.source === 'api' || e.isOfficialSource) && e.telemetry);
+  let nearestStation: WeatherEvent | null = null;
+  let minDistance = Infinity;
+
+  for (const st of stations) {
+    const d = calculateDistanceKm(lat, lng, st.latitude, st.longitude);
+    if (d < minDistance) {
+      minDistance = d;
+      nearestStation = st;
+    }
+  }
+
+  // If no station within 80km, leave neutral
+  if (!nearestStation || minDistance > 80) {
+    return {
+      hasStationNearby: false,
+      confirms: false,
+      contradicts: false,
+      confidenceDelta: 0
+    };
+  }
+
+  const tel = nearestStation.telemetry!;
+  const distStr = `${minDistance.toFixed(1)} km`;
+
+  // Precipitation / Storm / Flooding check
+  if (category === 'rainfall' || category === 'thunderstorm' || category === 'flooding') {
+    const rainMm = tel.precipitationMm ?? 0;
+    if (rainMm > 0.5 || [51, 53, 55, 61, 63, 65, 80, 81, 82, 95, 96, 99].includes(tel.weatherCode ?? 0)) {
+      return {
+        hasStationNearby: true,
+        stationName: nearestStation.city,
+        distanceKm: minDistance,
+        confirms: true,
+        contradicts: false,
+        confidenceDelta: 18,
+        supportingReason: `Nearby precipitation confirmed via Open-Meteo telemetry (${nearestStation.city}, ${distStr} away: ${rainMm.toFixed(1)} mm/hr)`
+      };
+    } else if (rainMm === 0 && (category === 'flooding' || category === 'thunderstorm')) {
+      return {
+        hasStationNearby: true,
+        stationName: nearestStation.city,
+        distanceKm: minDistance,
+        confirms: false,
+        contradicts: true,
+        confidenceDelta: -35,
+        contradictingReason: `Open-Meteo telemetry conflict: Nearest station (${nearestStation.city}, ${distStr} away) measured 0.0 mm precipitation during claimed ${category}`
+      };
+    }
+  }
+
+  // Heatwave check
+  if (category === 'heatwave') {
+    const tempC = tel.temperatureC ?? 25;
+    if (tempC >= 38) {
+      return {
+        hasStationNearby: true,
+        stationName: nearestStation.city,
+        distanceKm: minDistance,
+        confirms: true,
+        contradicts: false,
+        confidenceDelta: 16,
+        supportingReason: `Severe thermal anomaly confirmed via Open-Meteo telemetry (${nearestStation.city}, ${distStr} away: ${tempC.toFixed(1)}°C)`
+      };
+    } else if (tempC < 30) {
+      return {
+        hasStationNearby: true,
+        stationName: nearestStation.city,
+        distanceKm: minDistance,
+        confirms: false,
+        contradicts: true,
+        confidenceDelta: -30,
+        contradictingReason: `Open-Meteo telemetry conflict: Nearest station (${nearestStation.city}, ${distStr} away) observed normal surface temperature (${tempC.toFixed(1)}°C)`
+      };
+    }
+  }
+
+  // Strong wind check
+  if (category === 'strong wind') {
+    const windKmh = tel.windSpeedKmh ?? 0;
+    if (windKmh >= 35) {
+      return {
+        hasStationNearby: true,
+        stationName: nearestStation.city,
+        distanceKm: minDistance,
+        confirms: true,
+        contradicts: false,
+        confidenceDelta: 15,
+        supportingReason: `High-velocity wind squall confirmed via Open-Meteo telemetry (${nearestStation.city}, ${distStr} away: ${windKmh.toFixed(1)} km/h)`
+      };
+    }
+  }
+
+  return {
+    hasStationNearby: true,
+    stationName: nearestStation.city,
+    distanceKm: minDistance,
+    confirms: false,
+    contradicts: false,
+    confidenceDelta: 0
+  };
+}
+
+/**
  * Comprehensive automated verification, fake detection, and duplicate evaluation
  */
 export function evaluateEventRules(
@@ -369,27 +499,35 @@ export function evaluateEventRules(
   },
   existingEvents: WeatherEvent[]
 ): ProcessingRuleResult {
-  // 0. Meteorological Self-Contradiction Check (Immediate Auto-Delete Trigger)
+  const supportingEvidence: string[] = [];
+  const contradictingEvidence: string[] = [];
+
+  // 0. Meteorological Self-Contradiction Check
   const contradiction = checkContradiction(newEvent.text, newEvent.category);
   if (contradiction.isContradictory) {
+    const reason = contradiction.reason || 'Meteorological Self-Contradiction Detected';
+    contradictingEvidence.push(reason);
     return {
       isDuplicate: false,
-      isFlagged: true,
-      flagReason: contradiction.reason || 'Meteorological Self-Contradiction Detected',
+      isFlagged: false,
+      flagReason: reason,
       isContradictory: true,
-      shouldAutoDelete: true,
-      autoDeleteReason: contradiction.reason,
+      shouldAutoDelete: false,
+      autoDeleteReason: reason,
       suggestedCategory: newEvent.category,
-      confidence: 0,
-      initialStatus: 'flagged',
+      confidence: 10,
+      initialStatus: 'contradicted',
       credibilityScore: 0,
       sourceTrustLevel: 'suspicious',
       aiFakeDetection: {
         isMisleading: true,
         suspicionScore: 100,
-        indicators: [contradiction.reason || 'Direct meteorological self-contradiction']
+        indicators: [reason]
       },
-      matchedKeywords: []
+      matchedKeywords: [],
+      displayPolicy: 'SHOW_CONTRADICTED',
+      supportingEvidence: [],
+      contradictingEvidence: [reason]
     };
   }
 
@@ -415,19 +553,24 @@ export function evaluateEventRules(
 
   // If severe fake/spam detected
   if (aiFakeDetection.isMisleading) {
+    const reason = aiFakeDetection.indicators.join('; ');
+    contradictingEvidence.push(reason);
     return {
       isDuplicate: false,
       isFlagged: true,
-      flagReason: aiFakeDetection.indicators.join('; '),
+      flagReason: reason,
       isContradictory: false,
       shouldAutoDelete: false,
       suggestedCategory,
       confidence: Math.max(10, 100 - aiFakeDetection.suspicionScore),
-      initialStatus: 'flagged',
+      initialStatus: 'unverified',
       credibilityScore: Math.max(5, 100 - aiFakeDetection.suspicionScore),
       sourceTrustLevel: 'suspicious',
       aiFakeDetection,
-      matchedKeywords
+      matchedKeywords,
+      displayPolicy: 'HIDE_UNVERIFIED',
+      supportingEvidence: [],
+      contradictingEvidence
     };
   }
 
@@ -436,7 +579,7 @@ export function evaluateEventRules(
   const FOUR_HOURS_MS = 4 * 60 * 60 * 1000;
 
   for (const existing of existingEvents) {
-    if (existing.verificationStatus === 'flagged') continue;
+    if (existing.verificationStatus === 'flagged' || existing.status === 'unverified') continue;
 
     const existingTimestamp = new Date(existing.timestamp).getTime();
     const timeDiffMs = Math.abs(newTimestamp - existingTimestamp);
@@ -449,7 +592,6 @@ export function evaluateEventRules(
         existing.longitude
       );
 
-      // Check spatial distance (< 18km) and category or high text similarity (> 0.45)
       const textSimilarity = calculateTextSimilarity(newEvent.text, existing.description);
       const isSameCategory = existing.category === newEvent.category || existing.category === suggestedCategory;
 
@@ -466,31 +608,63 @@ export function evaluateEventRules(
           credibilityScore: sourceTrust.credibilityScore,
           sourceTrustLevel: sourceTrust.trustLevel,
           aiFakeDetection,
-          matchedKeywords
+          matchedKeywords,
+          displayPolicy: 'ATTACH_DUPLICATE',
+          supportingEvidence: [`Spatiotemporal duplicate: clustered into ${existing.id}`],
+          contradictingEvidence: []
         };
       }
     }
   }
 
-  // 5. Final Status & Confidence Calculation
-  let initialStatus: VerificationStatus = 'unverified';
-  let overallConfidence = Math.round((nlpConfidence * 0.4) + (sourceTrust.credibilityScore * 0.6));
+  // 5. Telemetry Cross-Check against cached Open-Meteo station
+  const telCheck = crossCheckAgainstTelemetry(newEvent.latitude, newEvent.longitude, suggestedCategory, existingEvents);
+  let isContradictory = false;
+  if (telCheck.contradicts) {
+    isContradictory = true;
+    contradictingEvidence.push(telCheck.contradictingReason!);
+  } else if (telCheck.confirms) {
+    supportingEvidence.push(telCheck.supportingReason!);
+  }
 
-  if (sourceTrust.trustLevel === 'official') {
+  // 6. Final Status & Confidence Calculation
+  let overallConfidence = Math.round((nlpConfidence * 0.4) + (sourceTrust.credibilityScore * 0.6));
+  overallConfidence += telCheck.confidenceDelta;
+  overallConfidence = Math.max(5, Math.min(99, overallConfidence));
+
+  let initialStatus: VerificationStatus = 'unverified';
+  let displayPolicy: DisplayPolicy = 'HIDE_UNVERIFIED';
+
+  if (isContradictory) {
+    initialStatus = 'contradicted';
+    displayPolicy = 'SHOW_CONTRADICTED';
+  } else if (sourceTrust.trustLevel === 'official') {
     initialStatus = 'verified';
-    overallConfidence = Math.max(95, overallConfidence);
-  } else if (sourceTrust.trustLevel === 'trusted_media') {
+    overallConfidence = Math.max(92, overallConfidence);
+    displayPolicy = 'SHOW_VERIFIED';
+    supportingEvidence.push('Official meteorological authority feed');
+  } else if (sourceTrust.trustLevel === 'trusted_media' || (telCheck.confirms && overallConfidence >= 75)) {
+    initialStatus = 'corroborated';
+    displayPolicy = 'SHOW_CORROBORATED';
+  } else if (overallConfidence >= 80 && telCheck.confirms) {
     initialStatus = 'verified';
-    overallConfidence = Math.max(88, overallConfidence);
-  } else if (sourceTrust.trustLevel === 'verified_citizen' && nlpConfidence >= 75) {
-    initialStatus = 'verified';
-    overallConfidence = Math.max(85, overallConfidence);
+    displayPolicy = 'SHOW_VERIFIED';
+  } else if (overallConfidence >= 60) {
+    initialStatus = 'corroborated';
+    displayPolicy = 'SHOW_CORROBORATED';
+  } else if (overallConfidence >= 40) {
+    initialStatus = 'provisional';
+    displayPolicy = 'SHOW_PROVISIONAL';
+    supportingEvidence.push('Preliminary citizen observation registered');
+  } else {
+    initialStatus = 'unverified';
+    displayPolicy = 'HIDE_UNVERIFIED';
   }
 
   return {
     isDuplicate: false,
-    isFlagged: false,
-    isContradictory: false,
+    isFlagged: initialStatus === 'unverified',
+    isContradictory,
     shouldAutoDelete: false,
     suggestedCategory,
     confidence: overallConfidence,
@@ -498,7 +672,10 @@ export function evaluateEventRules(
     credibilityScore: sourceTrust.credibilityScore,
     sourceTrustLevel: sourceTrust.trustLevel,
     aiFakeDetection,
-    matchedKeywords
+    matchedKeywords,
+    displayPolicy,
+    supportingEvidence,
+    contradictingEvidence
   };
 }
 

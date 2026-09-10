@@ -295,6 +295,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   };
 
   const categoriesList: EventCategory[] = [
+    'clear',
     'rainfall',
     'thunderstorm',
     'flooding',

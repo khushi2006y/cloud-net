@@ -16,14 +16,15 @@ import {
   ShieldAlert,
   Layers,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  Trash2
 } from 'lucide-react';
 import { useConnectivity } from '../services/connectivityService';
 import { Twitter } from './icons/TwitterIcon';
 import { WeatherEvent, EventCategory } from '../types/weather';
 import { generateSimulatedTweet, fetchLiveCityWeather } from '../services/weatherApi';
 import { getRandomIndianCity } from '../config/india';
-import { addEventWithProcessing, batchAddEvents, getStoredEvents } from '../services/storage';
+import { addEventWithProcessing, batchAddEvents, getStoredEvents, purgeAllMockAndSyncLive } from '../services/storage';
 import { executeBigDataIngestion, generateBigDataBatch } from '../services/streamQueue';
 import { apiClient } from '../services/apiClient';
 
@@ -58,10 +59,11 @@ function buildDynamicDuplicateEvent(): Omit<
       longitude: jitterLng,
       category: base.category,
       severity: base.severity,
-      title: `${base.category} conditions confirmed near ${base.city} centre`,
-      description: `Independent citizen report corroborating ongoing ${base.category} event in ${base.city}. Conditions still active.`,
-      rawText: `Confirming ${base.category} in ${base.city}! Roads affected. #${base.city.replace(/\s/g, '')}Weather #IMD`,
-      hashtags: [`#${base.city.replace(/\s/g, '')}Weather`, '#IMD', '#CitizenReport']
+      title: `${base.category} conditions reported near ${base.city} centre`,
+      description: `Independent citizen report corroborating ongoing ${base.category} conditions in ${base.city}.`,
+      rawText: `Reporting ${base.category} in ${base.city}! Road conditions affected. #${base.city.replace(/\s/g, '')}Weather #CitizenReport`,
+      hashtags: [`#${base.city.replace(/\s/g, '')}Weather`, '#CitizenReport'],
+      is_simulated: true
     };
   }
 
@@ -78,7 +80,9 @@ function buildDynamicDuplicateEvent(): Omit<
     severity: 'moderate',
     title: `Rainfall reported near ${city.name}`,
     description: `Citizen report of active rainfall conditions in ${city.name}.`,
-    rawText: `Heavy rain in ${city.name}! #IMD #WeatherAlert`
+    rawText: `Rainfall observed in ${city.name}! #WeatherAlert`,
+    hashtags: ['#WeatherAlert', '#CitizenReport'],
+    is_simulated: true
   };
 }
 
@@ -92,15 +96,15 @@ function buildDynamicSpamEvent(): Omit<
   const city = getRandomIndianCity();
   const SPAM_PATTERNS = [
     {
-      text: `Earn free crypto online! Click bit.ly/giveaway for free bitcoin while it might rain in ${city.name}! #IMD`,
+      text: `Earn free crypto online! Click bit.ly/giveaway for free bitcoin while it might rain in ${city.name}!`,
       title: 'Promotional spam post detected'
     },
     {
-      text: `WIN FREE IPHONE! lottery giveaway running. Follow back for prize. Also maybe thunder in ${city.name}. #IMD`,
+      text: `WIN FREE PHONE! lottery giveaway running. Follow back for prize. Also maybe thunder in ${city.name}.`,
       title: 'Lottery/giveaway spam flagged'
     },
     {
-      text: `Investment tip: buy telegram stocks. Casino bonus 1000 coins. Weather update: rain possible in ${city.name}. #IMD`,
+      text: `Investment tip: buy telegram stocks. Casino bonus 1000 coins. Weather update: rain possible in ${city.name}.`,
       title: 'Multi-pattern spam detected'
     }
   ];
@@ -121,7 +125,8 @@ function buildDynamicSpamEvent(): Omit<
     title: pattern.title,
     description: `Post from ${city.name} region containing promotional patterns. AI Spam Guard will intercept this.`,
     rawText: pattern.text,
-    hashtags: ['#IMD', '#Promo']
+    hashtags: ['#Promo', '#Spam'],
+    is_simulated: true
   };
 }
 
@@ -141,19 +146,19 @@ export const SimulationControls: React.FC<SimulationControlsProps> = ({
   useEffect(() => {
     if (!autoStreamActive) return;
 
-    const interval = setInterval(() => {
-      const tweet = generateSimulatedTweet();
+    const interval = setInterval(async () => {
+      const tweet = await generateSimulatedTweet();
       const result = addEventWithProcessing(tweet);
-      onNewEvent(result.event, `Live Twitter Post: ${result.event.city}`);
-    }, 12000);
+      onNewEvent(result.event, `Live Twitter / Meteorological Post: ${result.event.city}`);
+    }, 15000);
 
     return () => clearInterval(interval);
   }, [autoStreamActive, onNewEvent]);
 
-  const handleSimulateTweet = () => {
-    const tweet = generateSimulatedTweet();
+  const handleSimulateTweet = async () => {
+    const tweet = await generateSimulatedTweet();
     const result = addEventWithProcessing(tweet);
-    onNewEvent(result.event, `Twitter #IMD Post: ${result.event.city}`);
+    onNewEvent(result.event, `Twitter / IMD Stream: ${result.event.city}`);
   };
 
   const handleFetchOpenMeteo = async () => {
@@ -216,7 +221,7 @@ export const SimulationControls: React.FC<SimulationControlsProps> = ({
     }
   };
 
-  // Trigger SIH Demonstration Scenarios A through H
+  // Trigger Meteorological Integrity Verification Scenarios A through H
   const handleTriggerScenario = async (scenarioLetter: string) => {
     setIsTriggeringScenario(scenarioLetter);
     try {
@@ -226,7 +231,7 @@ export const SimulationControls: React.FC<SimulationControlsProps> = ({
         addEventWithProcessing(clientEvt);
         onNewEvent(
           clientEvt,
-          `🎯 SIH Scenario ${scenarioLetter.toUpperCase()}: ${res.scenario} → [${clientEvt.verificationStatus.toUpperCase()}] ${clientEvt.confidenceScore}% confidence`
+          `🎯 Scenario ${scenarioLetter.toUpperCase()}: ${res.scenario} → [${clientEvt.verificationStatus.toUpperCase()}] Evidence Confidence: ${clientEvt.confidenceScore}/100`
         );
       } else if (res && res.measured_throughput_events_per_sec) {
         onNewEvent(
@@ -252,7 +257,9 @@ export const SimulationControls: React.FC<SimulationControlsProps> = ({
           description: 'Coordinates lie outside sovereign Indian bounding polygon.',
           verificationStatus: 'flagged',
           confidenceScore: 15,
-          flagReason: 'Rejected by Sovereign Geo-Fence Gate: Outside India coordinates'
+          flagReason: 'Rejected by Sovereign Geo-Fence Gate: Outside India coordinates',
+          is_simulated: true,
+          display_policy: 'HIDE_UNVERIFIED'
         };
         addEventWithProcessing(spoof);
         onNewEvent(spoof, '🎯 Scenario C: Geo-Fence intercepted out-of-bounds report (Status: FLAGGED)');
@@ -271,7 +278,9 @@ export const SimulationControls: React.FC<SimulationControlsProps> = ({
           description: '3-tier timestamp analysis detected image taken 10 days earlier with Malaysia GPS.',
           verificationStatus: 'stale',
           confidenceScore: 10,
-          flagReason: 'Stale media photograph with foreign EXIF coordinates'
+          flagReason: 'Stale media photograph with foreign EXIF coordinates',
+          is_simulated: true,
+          display_policy: 'SHOW_STALE'
         };
         addEventWithProcessing(stale);
         onNewEvent(stale, '🎯 Scenario D: 10-day-old media weaponization blocked (Status: STALE)');
@@ -291,7 +300,10 @@ export const SimulationControls: React.FC<SimulationControlsProps> = ({
           verificationStatus: 'contradicted',
           confidenceScore: 20,
           isContradictory: true,
-          flagReason: 'Physical invariant violation: 0mm precipitation and 42.5°C surface temperature'
+          flagReason: 'Physical invariant violation: 0mm precipitation and 42.5°C surface temperature',
+          is_simulated: true,
+          display_policy: 'SHOW_CONTRADICTED',
+          contradicting_evidence: ['Open-Meteo station: 0.0mm rain, 42.5°C surface temperature (Clear sky)']
         };
         addEventWithProcessing(contra);
         onNewEvent(contra, '🎯 Scenario E: Surface telemetry contradicts report (Status: CONTRADICTED)');
@@ -309,10 +321,12 @@ export const SimulationControls: React.FC<SimulationControlsProps> = ({
           title: 'Aandhi toofan aur bijli girna shuru',
           description: 'Yahan bohot bhayankar toofan aaya hai, bijli gir gayi hai ped par aur tez barish chal rahi hai!',
           verificationStatus: 'verified',
-          confidenceScore: 88
+          confidenceScore: 88,
+          is_simulated: true,
+          display_policy: 'SHOW_VERIFIED'
         };
         addEventWithProcessing(dialect);
-        onNewEvent(dialect, '🎯 Scenario F: Hinglish dialect ("bijli", "barish") correctly parsed to Thunderstorm!');
+        onNewEvent(dialect, '🎯 Scenario F: Regional weather dialect ("bijli", "barish") correctly parsed to Thunderstorm!');
       } else {
         handleSimulateTweet();
       }
@@ -321,30 +335,30 @@ export const SimulationControls: React.FC<SimulationControlsProps> = ({
     }
   };
 
-  const SIH_SCENARIOS = [
+  const METEOROLOGICAL_INTEGRITY_SCENARIOS = [
     { id: 'A', name: 'Valid Rain', tag: 'Telemetry Verified', color: 'bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100' },
     { id: 'B', name: '50 Duplicates', tag: 'Dedup Cluster', color: 'bg-purple-50 text-purple-700 border-purple-300 hover:bg-purple-100' },
     { id: 'C', name: 'Geo-Spoof', tag: 'Out-of-Bounds Intercept', color: 'bg-rose-50 text-rose-700 border-rose-300 hover:bg-rose-100' },
     { id: 'D', name: 'Stale Media', tag: '10-Day Lag & Exif', color: 'bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100' },
     { id: 'E', name: 'Telemetry Conflict', tag: '0mm Gauge vs Flood', color: 'bg-red-50 text-red-700 border-red-300 hover:bg-red-100' },
-    { id: 'F', name: 'Hinglish NLP', tag: 'Barish / Loo Dialect', color: 'bg-sky-50 text-sky-700 border-sky-300 hover:bg-sky-100' },
-    { id: 'G', name: 'Multi-Agency', tag: 'Citizen + IoT + IMD', color: 'bg-teal-50 text-teal-700 border-teal-300 hover:bg-teal-100' },
+    { id: 'F', name: 'Regional NLP', tag: 'Barish / Loo Dialect', color: 'bg-sky-50 text-sky-700 border-sky-300 hover:bg-sky-100' },
+    { id: 'G', name: 'Multi-Agency', tag: 'Citizen + IoT + Open-Meteo', color: 'bg-teal-50 text-teal-700 border-teal-300 hover:bg-teal-100' },
     { id: 'H', name: 'Load Burst', tag: '500 Events Benchmark', color: 'bg-indigo-50 text-indigo-700 border-indigo-300 hover:bg-indigo-100' },
   ];
 
   return (
     <div className="glass-card p-3.5 rounded-2xl mb-6 flex flex-col space-y-2.5 text-xs shadow-sm">
       
-      {/* Row 1: SIH 2026 Evaluation Scenarios Cockpit Header */}
+      {/* Row 1: Meteorological Integrity Verification Suite Cockpit Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-2">
           <div className="p-1.5 rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 text-white shadow-xs">
             <Sparkles className="w-4 h-4" />
           </div>
           <div>
-            <span className="font-extrabold text-slate-900">SIH Evaluation Suite (Scenarios A through H):</span>
+            <span className="font-extrabold text-slate-900">Meteorological Integrity Test Suite (Scenarios A through H):</span>
             <span className="text-[11px] text-slate-500 ml-1.5 hidden md:inline">
-              1-Click interactive demonstration of CloudNet verification safeguards
+              Automated verification safeguards & stress-test scenarios
             </span>
           </div>
         </div>
@@ -357,10 +371,10 @@ export const SimulationControls: React.FC<SimulationControlsProps> = ({
         </button>
       </div>
 
-      {/* Row 1.5: SIH Scenario Buttons Grid */}
+      {/* Row 1.5: Scenario Buttons Grid */}
       {showScenarios && (
         <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-8 gap-1.5 pt-1">
-          {SIH_SCENARIOS.map((sc) => (
+          {METEOROLOGICAL_INTEGRITY_SCENARIOS.map((sc) => (
             <button
               key={sc.id}
               onClick={() => handleTriggerScenario(sc.id)}
@@ -393,9 +407,23 @@ export const SimulationControls: React.FC<SimulationControlsProps> = ({
           <button
             onClick={handleSimulateTweet}
             className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-white hover:bg-sky-50 text-slate-700 hover:text-sky-700 border border-slate-200 text-xs font-semibold transition-all cursor-pointer shadow-xs"
+            title="Poll live Twitter and official meteorological social stream"
           >
             <Twitter className="w-3.5 h-3.5 text-sky-500" />
-            <span>Simulate Tweet</span>
+            <span>Poll Twitter Feed</span>
+          </button>
+
+          <button
+            onClick={() => {
+              purgeAllMockAndSyncLive();
+              if (onBatchIngested) onBatchIngested(0);
+              window.location.reload();
+            }}
+            className="flex items-center space-x-1.5 px-2.5 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-semibold transition-all cursor-pointer shadow-xs"
+            title="Purge all synthetic test records and reset to live verified data"
+          >
+            <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+            <span>Purge Test Records</span>
           </button>
 
           <button

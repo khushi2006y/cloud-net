@@ -52,25 +52,25 @@ export const CityGlanceBar: React.FC<CityGlanceBarProps> = ({
       const config = CATEGORY_CONFIG[matched.category];
       return {
         hasEvent: true,
-        emoji: config.emoji,
-        label: config.label,
+        emoji: config?.emoji || '🌤️',
+        label: config?.label || matched.category,
         category: matched.category,
         severity: matched.severity,
         temp: matched.telemetry?.temperatureC !== undefined 
           ? matched.telemetry.temperatureC 
-          : (matched.category === 'heatwave' ? 44.5 : matched.category === 'rainfall' ? 26.2 : 28.0),
-        wind: matched.telemetry?.windSpeedKmh || 22
+          : undefined,
+        wind: matched.telemetry?.windSpeedKmh
       };
     }
 
     return {
       hasEvent: false,
-      emoji: '☀️',
-      label: 'Fair Weather',
+      emoji: '🌤️',
+      label: 'Telemetry Monitored',
       category: 'default' as WeatherMood,
       severity: 'normal',
-      temp: 29.0,
-      wind: 12
+      temp: undefined,
+      wind: undefined
     };
   };
 
@@ -220,15 +220,21 @@ export const CityGlanceBar: React.FC<CityGlanceBarProps> = ({
                 </div>
 
                 <div className="flex items-center space-x-1 pl-1.5 border-l border-slate-100 font-mono text-xs">
-                  <span className={`font-bold ${
-                    status.temp >= 40 
-                      ? 'text-orange-600' 
-                      : status.temp <= 15 
-                      ? 'text-cyan-600' 
-                      : 'text-slate-800'
-                  }`}>
-                    {Math.round(status.temp)}°C
-                  </span>
+                  {status.temp !== undefined ? (
+                    <span className={`font-bold ${
+                      status.temp >= 40 
+                        ? 'text-orange-600' 
+                        : status.temp <= 15 
+                        ? 'text-cyan-600' 
+                        : 'text-slate-800'
+                    }`}>
+                      {Math.round(status.temp)}°C
+                    </span>
+                  ) : (
+                    <span className="text-slate-400 text-[10px] font-medium" title="Station telemetry unavailable">
+                      --°C
+                    </span>
+                  )}
                 </div>
               </button>
             );

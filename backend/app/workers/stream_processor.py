@@ -11,6 +11,8 @@ from app.models.verification_log import VerificationLog
 from app.models.alert import Alert
 from app.models.cluster import EventCluster
 from app.models.source import Source
+from app.models.telemetry import Telemetry
+from app.intelligence.geo_validator import calculate_haversine_km
 from app.intelligence.deduplication import evaluate_deduplication
 from app.intelligence.evidence_engine import evaluate_event_evidence
 
@@ -58,8 +60,29 @@ class StreamProcessor:
             if src_obj:
                 reliability = src_obj.reliability_score
 
-        # 4. Extract telemetry cross-check payload if present
+        # 4. Extract telemetry cross-check payload if present, or query nearest station reading
         nearby_telemetry = event_dict.get("telemetry")
+        if not nearby_telemetry:
+            try:
+                tel_stmt = select(Telemetry).order_by(Telemetry.timestamp.desc()).limit(100)
+                tel_res = await db.execute(tel_stmt)
+                tel_list = tel_res.scalars().all()
+                for tel in tel_list:
+                    d = calculate_haversine_km(event_dict["latitude"], event_dict["longitude"], tel.latitude, tel.longitude)
+                    if d <= 80.0:
+                        nearby_telemetry = {
+                            "temperature_c": tel.temperature_c,
+                            "wind_speed_kmh": tel.wind_speed_kmh,
+                            "precipitation_mm": tel.precipitation_mm or tel.rainfall_mm,
+                            "rainfall_mm": tel.rainfall_mm or tel.precipitation_mm,
+                            "pressure_hpa": tel.pressure_hpa,
+                            "humidity_pct": tel.humidity_pct,
+                            "weather_code": tel.weather_code,
+                            "distance_km": round(d, 1)
+                        }
+                        break
+            except Exception:
+                pass
 
         # 5. Execute Multi-Factor Evidence Fusion Engine
         eval_result = evaluate_event_evidence(
@@ -164,30 +187,11 @@ class StreamProcessor:
         # 10. Real-time WebSocket Broadcast
         if ws_broadcast_callback:
             try:
+                from app.api.events import format_event_out
+                formatted_payload = format_event_out(new_event)
                 await ws_broadcast_callback({
                     "type": "NEW_EVENT",
-                    "event": {
-                        "id": new_event.id,
-                        "category": new_event.event_type,
-                        "title": new_event.title,
-                        "description": new_event.description,
-                        "latitude": new_event.latitude,
-                        "longitude": new_event.longitude,
-                        "city": new_event.city,
-                        "state": new_event.state,
-                        "severity": new_event.severity,
-                        "confidenceScore": new_event.confidence_score,
-                        "verificationStatus": new_event.verification_status,
-                        "source": {
-                            "id": new_event.source_id or "src-citizen",
-                            "name": new_event.source_name,
-                            "type": new_event.source_type,
-                            "reliability": reliability
-                        },
-                        "timestamps": {
-                            "uploadTime": new_event.upload_time.isoformat()
-                        }
-                    }
+                    "event": formatted_payload
                 })
             except Exception:
                 pass

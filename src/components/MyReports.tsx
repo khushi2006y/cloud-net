@@ -280,8 +280,8 @@ export const MyReports: React.FC<MyReportsProps> = ({ onOpenCitizenModal, onInsp
               color: 'text-amber-700',
             },
             {
-              label: 'Avg Confidence',
-              value: `${Math.round(reports.reduce((s, r) => s + r.confidenceScore, 0) / reports.length)}%`,
+              label: 'Avg Evidence Score',
+              value: `${Math.round(reports.reduce((s, r) => s + (r.confidenceScore || 0), 0) / (reports.length || 1))}/100`,
               color: 'text-sky-700',
             },
           ].map(stat => (
@@ -370,8 +370,8 @@ export const MyReports: React.FC<MyReportsProps> = ({ onOpenCitizenModal, onInsp
                     </span>
 
                     {/* Confidence */}
-                    <span className="text-[10px] text-slate-400 font-medium">
-                      {report.confidenceScore}% confidence
+                    <span className="text-[10px] text-slate-500 font-medium">
+                      Evidence Confidence: {Math.round(report.confidenceScore ?? 50)}/100
                     </span>
                   </div>
                 </div>

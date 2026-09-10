@@ -15,10 +15,12 @@ import {
 import { WeatherMood } from '../types/weather';
 import { MOOD_THEMES } from '../data/initialEvents';
 import { setAdminAuthState } from '../services/storage';
+import { ActiveTab } from './Sidebar';
+import { ClipboardList, Info } from 'lucide-react';
 
 interface NavbarProps {
-  activeTab: 'dashboard' | 'analytics' | 'admin' | 'feeds';
-  setActiveTab: (tab: 'dashboard' | 'analytics' | 'admin' | 'feeds') => void;
+  activeTab: ActiveTab;
+  setActiveTab: (tab: ActiveTab) => void;
   onOpenCitizenModal: () => void;
   onOpenAdminLoginModal: () => void;
   onOpenHelplinesModal: () => void;
@@ -65,10 +67,13 @@ export const Navbar: React.FC<NavbarProps> = ({
   };
 
   const navItems = [
-    { id: 'dashboard' as const, label: 'Live Map', shortLabel: 'Map', icon: Map, color: 'text-sky-600' },
-    { id: 'analytics' as const, label: 'Charts & Stats', shortLabel: 'Charts', icon: BarChart3, color: 'text-indigo-600' },
-    { id: 'admin' as const, label: 'Admin Verify', shortLabel: 'Admin', icon: ShieldCheck, color: 'text-emerald-600' },
-    { id: 'feeds' as const, label: 'Data Feeds', shortLabel: 'Feeds', icon: Radio, color: 'text-amber-600' },
+    { id: 'dashboard' as ActiveTab, label: 'Live Map', shortLabel: 'Map', icon: Map, color: 'text-sky-600' },
+    { id: 'alerts' as ActiveTab, label: 'Alerts', shortLabel: 'Alerts', icon: ShieldAlert, color: 'text-rose-600' },
+    { id: 'analytics' as ActiveTab, label: 'Analytics', shortLabel: 'Stats', icon: BarChart3, color: 'text-indigo-600' },
+    { id: 'reports' as ActiveTab, label: 'Reports', shortLabel: 'Reports', icon: ClipboardList, color: 'text-violet-600' },
+    { id: 'sources' as ActiveTab, label: 'Sources', shortLabel: 'Sources', icon: Radio, color: 'text-amber-600' },
+    { id: 'about' as ActiveTab, label: 'About', shortLabel: 'About', icon: Info, color: 'text-teal-600' },
+    ...(isAdminAuthenticated ? [{ id: 'admin' as ActiveTab, label: 'Admin Console', shortLabel: 'Admin', icon: ShieldCheck, color: 'text-emerald-600' }] : [])
   ];
 
   const currentTabItem = navItems.find(item => item.id === activeTab) || navItems[0];
@@ -97,11 +102,11 @@ export const Navbar: React.FC<NavbarProps> = ({
                   CloudNet
                 </span>
                 <span className="text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-sky-100 text-sky-800 border border-sky-200">
-                  IMD Grid
+                  Live Intelligence
                 </span>
               </div>
               <p className="text-xs text-slate-500 font-medium hidden sm:block">
-                National Meteorological Monitoring & Verification
+                National Weather Intelligence & Incident Verification
               </p>
             </div>
           </div>
