@@ -41,7 +41,7 @@ async def init_database_and_seed():
             ("src-open-meteo", "Open-Meteo Synoptic Station Network", "WEATHER_API", 96.0),
             ("src-imd-official", "India Meteorological Department (IMD)", "IMD", 98.0),
             ("src-citizen-portal", "Citizen Crowdsource Network", "CITIZEN", 72.0),
-            ("src-social-stream-sim", "Public Social Stream [SIMULATION]", "SOCIAL", 58.0),
+            ("src-social-stream-real", "Official Meteorological Social Stream (@Indiametdept / Twitter)", "SOCIAL", 92.0),
             ("src-gov-data", "data.gov.in Meteorological Datasets", "DATASET", 92.0)
         ]
 

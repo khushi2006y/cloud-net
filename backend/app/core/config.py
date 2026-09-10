@@ -56,6 +56,10 @@ class Settings(BaseSettings):
         "*"
     ]
 
+    # Twitter / X Social Stream Integration
+    TWITTER_BEARER_TOKEN: str = os.getenv("TWITTER_BEARER_TOKEN", "")
+    TWITTER_API_ENDPOINT: str = os.getenv("TWITTER_API_ENDPOINT", "https://api.twitter.com/2/tweets/search/recent")
+
     class Config:
         case_sensitive = True
         env_file = ".env"

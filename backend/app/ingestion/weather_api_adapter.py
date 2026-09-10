@@ -35,11 +35,11 @@ def map_wmo_to_category(wmo_code: int, temp_c: float, wind_kmh: float, precip_mm
         return "fog", "MEDIUM"
     if precip_mm > 25.0 or wmo_code in [65, 82]:
         return "heavy_rainfall", "HIGH"
-    if precip_mm > 5.0 or wmo_code in [61, 63, 80, 81]:
-        return "rainfall", "MEDIUM"
+    if precip_mm > 0.5 or wmo_code in [51, 53, 55, 61, 63, 80, 81]:
+        return "rainfall", "MEDIUM" if precip_mm > 5.0 else "LOW"
     if temp_c >= 38.0 and wind_kmh >= 28.0:
         return "dust_storm", "MEDIUM"
-    return "rainfall", "LOW"
+    return "clear", "LOW"
 
 
 class WeatherAPIAdapter(BaseDataSource):
